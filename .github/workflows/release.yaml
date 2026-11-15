@@ -1,0 +1,94 @@
+name: Release
+
+# Push a tag vX.Y.Z (or vX.Y.Z.W) to publish: the plugin is built and tested, attached to a
+# GitHub release as sharefin_<version>.zip, and the version is added to manifest.json on main,
+# which Jellyfin reads as a plugin repository.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Read version from tag
+        id: version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME must look like v1.2.3 or v1.2.3.4"
+            exit 1
+          fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && v="$v.0"
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: dotnet test --solution Jellyfin.Plugin.Sharefin.slnx -c Release
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: >
+          dotnet build Jellyfin.Plugin.Sharefin/Jellyfin.Plugin.Sharefin.csproj -c Release -o out
+          -p:Version=$VERSION -p:AssemblyVersion=$VERSION -p:FileVersion=$VERSION
+
+      - name: Package
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --no-merges --format='- %s' ${previous:+$previous..}"$GITHUB_REF_NAME" \
+            | grep -v 'dans le manifest' > changelog.md || echo "- Version $VERSION" > changelog.md
+          timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          mkdir pkg
+          cp out/Jellyfin.Plugin.Sharefin.dll pkg/
+          jq --arg v "$VERSION" --arg ts "$timestamp" --rawfile cl changelog.md \
+            '.version = $v | .timestamp = $ts | .changelog = ($cl | rtrimstr("\n"))' meta.json > pkg/meta.json
+          zip="sharefin_$VERSION.zip"
+          (cd pkg && zip -X -q "../$zip" ./*)
+          cp meta.json release-meta.json
+          {
+            echo "zip=$zip"
+            echo "md5=$(md5sum "$zip" | cut -d' ' -f1)"
+            echo "timestamp=$timestamp"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: gh release create "$GITHUB_REF_NAME" "$ZIP" --title "Sharefin $VERSION" --notes-file changelog.md --verify-tag
+
+      - name: Add version to manifest.json on main
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          ZIP: ${{ steps.package.outputs.zip }}
+          MD5: ${{ steps.package.outputs.md5 }}
+          TIMESTAMP: ${{ steps.package.outputs.timestamp }}
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$ZIP"
+          bash .github/scripts/update-manifest.sh manifest.json release-meta.json "$VERSION" "$url" "$MD5" "$TIMESTAMP" changelog.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898729+github-actions[bot]@users.noreply.github.com'
+          git add manifest.json
+          git commit -m "Publie Sharefin $VERSION dans le manifest"
+          git push origin main

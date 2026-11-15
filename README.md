@@ -12,7 +12,20 @@ Plugin Jellyfin 12.x : partage d'un **film, d'une série, d'une saison ou d'un �
 - Jellyfin **12.0 ou plus récent** (testé sur 12.0 et 12.4).
 - Un **reverse proxy en HTTPS** devant Jellyfin pour tout accès depuis Internet (voir [Exposition publique](#exposition-publique)).
 
+## Installation depuis le dépôt de plugins
+
+1. Dans Jellyfin : **Tableau de bord → Extensions → Catalogue**, puis l'icône des réglages (**Dépôts**) et **+**.
+2. Nom : `Sharefin`, URL :
+   ```
+   https://raw.githubusercontent.com/TTG-Phyros/ShareFin/main/manifest.json
+   ```
+3. Dans le **Catalogue**, installer **Sharefin**, puis redémarrer Jellyfin.
+
+Les nouvelles versions apparaissent ensuite dans le catalogue comme pour les autres extensions.
+
 ## Installation manuelle
+
+Télécharger `sharefin_<version>.zip` depuis les [Releases](https://github.com/TTG-Phyros/ShareFin/releases) et le décompresser dans le dossier `plugins` de Jellyfin (étape 2 ci-dessous), ou compiler soi-même :
 
 1. Compiler (SDK .NET 10) :
    ```bash
@@ -23,8 +36,6 @@ Plugin Jellyfin 12.x : partage d'un **film, d'une série, d'une saison ou d'un �
    - Docker (image officielle) : `/config/plugins/Sharefin_1.0.0.0/`
    - Windows : `%ProgramData%\Jellyfin\Server\plugins\Sharefin_1.0.0.0\`
 3. Redémarrer Jellyfin. Le plugin apparaît dans **Tableau de bord → Extensions → Sharefin**.
-
-Pour un dépôt de plugins, `build.yaml` est prêt pour [jprm](https://github.com/oddstr13/jellyfin-plugin-repository-manager) (`targetAbi 12.0.0.0`, `net10.0`).
 
 ## Utilisation
 
@@ -100,6 +111,20 @@ dotnet test --solution Jellyfin.Plugin.Sharefin.slnx
 ```
 
 Les tests (xUnit v3) couvrent la validation du mot de passe, l'expiration et la révocation, l'invalidation du cookie après changement de mot de passe, le confinement série/saison/épisode, la limitation des tentatives et la persistance.
+
+### Intégration continue et publication
+
+- `.github/workflows/ci.yaml` compile et teste à chaque push sur `main` et à chaque pull request. La DLL est disponible 14 jours dans les artefacts du run.
+- `.github/workflows/release.yaml` publie une version quand on pousse un tag :
+  ```bash
+  git tag v1.0.1
+  ```
+  ```bash
+  git push origin v1.0.1
+  ```
+  Le workflow teste et compile avec la version du tag (`v1.0.1` donne `1.0.1.0`), crée la Release GitHub avec `sharefin_1.0.1.0.zip` (DLL et `meta.json`), puis ajoute la version en tête de `manifest.json` sur `main`, avec la somme MD5 et la liste des commits depuis le tag précédent comme changelog. Jellyfin la propose alors comme mise à jour.
+
+Les métadonnées du catalogue (nom, description, `targetAbi`) viennent de `meta.json`. Le dépôt doit rester public pour que Jellyfin puisse lire le manifest et télécharger les zips. Si `main` est protégée, le workflow doit être autorisé à y pousser.
 
 Structure :
 
