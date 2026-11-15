@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Sharefin</title>
+</head>
+<body>
+    <div id="SharefinConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h2>Liens de partage</h2>
+                <div style="overflow-x:auto">
+                    <table id="sfLinks" style="width:100%;border-collapse:collapse">
+                        <thead>
+                            <tr style="text-align:left">
+                                <th>Élément</th><th>Créé</th><th>Expire</th><th>Accès</th><th>Statut</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <p id="sfEmpty" class="fieldDescription">Aucun lien pour l'instant.</p>
+
+                <h2>Nouveau lien</h2>
+                <form id="sfCreateForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfSearch">Rechercher un film, une série ou un épisode</label>
+                        <input id="sfSearch" type="search" is="emby-input" autocomplete="off" />
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="sfResults">Résultat</label>
+                        <select id="sfResults" is="emby-select" class="emby-select-withcolor emby-select"></select>
+                    </div>
+                    <div class="selectContainer" id="sfSeasonBox" style="display:none">
+                        <label class="selectLabel" for="sfSeason">Partager</label>
+                        <select id="sfSeason" is="emby-select" class="emby-select-withcolor emby-select"></select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfPassword">Mot de passe (6 caractères minimum)</label>
+                        <input id="sfPassword" type="text" is="emby-input" required minlength="6" maxlength="256" autocomplete="off" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfExpires">Expiration (vide = lien permanent)</label>
+                        <input id="sfExpires" type="datetime-local" is="emby-input" />
+                    </div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Créer le lien</span></button>
+                </form>
+                <div id="sfCreated" style="display:none;margin-top:1em">
+                    <div class="fieldDescription">Lien créé :</div>
+                    <input id="sfCreatedUrl" type="text" is="emby-input" readonly />
+                </div>
+
+                <h2>Réglages</h2>
+                <form id="sfSettingsForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfRememberDays">Mémorisation du mot de passe pour un lien permanent (jours)</label>
+                        <input id="sfRememberDays" type="number" is="emby-input" min="1" max="3650" />
+                        <div class="fieldDescription">Durée glissante, renouvelée à chaque visite. Pour un lien temporaire, la mémorisation dure jusqu'à l'expiration du lien.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfMaxLink">Échecs de mot de passe tolérés par lien</label>
+                        <input id="sfMaxLink" type="number" is="emby-input" min="1" max="100" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="sfMaxIp">Échecs de mot de passe tolérés par adresse IP</label>
+                        <input id="sfMaxIp" type="number" is="emby-input" min="1" max="1000" />
+                        <div class="fieldDescription">Au-delà, blocage d'une minute, doublé à chaque nouveau blocage (15 minutes au plus).</div>
+                    </div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Enregistrer</span></button>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '342e21ed-b7a5-416a-96d6-8e8e4b325639';
+                var page = document.querySelector('#SharefinConfigPage');
+                var $ = function (sel) { return page.querySelector(sel); };
+                var searchTimer;
+
+                function publicUrl(path) {
+                    return ApiClient.serverAddress().replace(/\/$/, '') + '/' + path;
+                }
+
+                function fmt(d) {
+                    return d ? new Date(d).toLocaleString() : 'Jamais';
+                }
+
+                function api(method, path, body) {
+                    return ApiClient.ajax({
+                        type: method,
+                        url: ApiClient.getUrl(path),
+                        data: body ? JSON.stringify(body) : undefined,
+                        contentType: 'application/json'
+                    });
+                }
+
+                function cell(tr, text) {
+                    var td = document.createElement('td');
+                    td.textContent = text;
+                    td.style.padding = '.4em .6em .4em 0';
+                    tr.appendChild(td);
+                    return td;
+                }
+
+                function button(td, label, onClick) {
+                    // Styled by classes; jellyfin-web's createElement does not accept the { is } option.
+                    var b = document.createElement('button');
+                    b.className = 'raised emby-button';
+                    b.style.margin = '.15em';
+                    b.type = 'button';
+                    b.textContent = label;
+                    b.addEventListener('click', onClick);
+                    td.appendChild(b);
+                }
+
+                function fail(err) {
+                    Dashboard.hideLoadingMsg();
+                    var msg = 'Erreur';
+                    if (err && err.text) {
+                        err.text().then(function (t) { Dashboard.alert(t || msg); });
+                    } else {
+                        Dashboard.alert(msg);
+                    }
+                }
+
+                function loadLinks() {
+                    return ApiClient.getJSON(ApiClient.getUrl('Sharefin/links')).then(function (links) {
+                        var body = $('#sfLinks tbody');
+                        body.innerHTML = '';
+                        $('#sfEmpty').style.display = links.length ? 'none' : '';
+                        links.forEach(function (l) {
+                            var tr = document.createElement('tr');
+                            cell(tr, l.ItemName + ' (' + l.ItemType + ')');
+                            cell(tr, fmt(l.CreatedUtc));
+                            cell(tr, l.ExpiresUtc ? fmt(l.ExpiresUtc) : 'Permanent');
+                            cell(tr, String(l.AccessCount));
+                            cell(tr, { Active: 'Actif', Expired: 'Expiré', Revoked: 'Révoqué', Unavailable: 'Élément supprimé' }[l.Status] || l.Status);
+                            var actions = cell(tr, '');
+                            button(actions, 'Copier', function () {
+                                navigator.clipboard.writeText(publicUrl(l.Path)).then(function () { Dashboard.alert('Lien copié'); });
+                            });
+                            button(actions, 'Mot de passe', function () {
+                                var pwd = prompt('Nouveau mot de passe (6 caractères minimum). Les visiteurs devront le ressaisir.');
+                                if (pwd) {
+                                    api('POST', 'Sharefin/links/' + l.Id + '/password', { Password: pwd }).then(loadLinks, fail);
+                                }
+                            });
+                            if (l.Status !== 'Revoked') {
+                                button(actions, 'Révoquer', function () {
+                                    if (confirm('Révoquer ce lien ? Il cessera de fonctionner immédiatement.')) {
+                                        api('POST', 'Sharefin/links/' + l.Id + '/revoke').then(loadLinks, fail);
+                                    }
+                                });
+                            }
+                            button(actions, 'Supprimer', function () {
+                                if (confirm('Supprimer définitivement ce lien ?')) {
+                                    api('DELETE', 'Sharefin/links/' + l.Id).then(loadLinks, fail);
+                                }
+                            });
+                            body.appendChild(tr);
+                        });
+                    }, fail);
+                }
+
+                function option(select, value, text) {
+                    var o = document.createElement('option');
+                    o.value = value;
+                    o.textContent = text;
+                    select.appendChild(o);
+                }
+
+                function search() {
+                    var term = $('#sfSearch').value.trim();
+                    var select = $('#sfResults');
+                    if (term.length < 2) {
+                        return;
+                    }
+
+                    ApiClient.getItems(ApiClient.getCurrentUserId(), {
+                        SearchTerm: term,
+                        IncludeItemTypes: 'Movie,Series,Episode',
+                        Recursive: true,
+                        Limit: 30
+                    }).then(function (result) {
+                        select.innerHTML = '';
+                        result.Items.forEach(function (i) {
+                            var label = i.Type === 'Episode'
+                                ? i.SeriesName + ' S' + (i.ParentIndexNumber || 0) + 'E' + (i.IndexNumber || 0) + ' - ' + i.Name
+                                : i.Name + (i.ProductionYear ? ' (' + i.ProductionYear + ')' : '') + (i.Type === 'Series' ? ' [série]' : '');
+                            option(select, i.Id + '|' + i.Type, label);
+                        });
+                        onResultChange();
+                    }, fail);
+                }
+
+                function onResultChange() {
+                    var parts = ($('#sfResults').value || '').split('|');
+                    var box = $('#sfSeasonBox');
+                    var seasons = $('#sfSeason');
+                    seasons.innerHTML = '';
+                    if (parts[1] !== 'Series') {
+                        box.style.display = 'none';
+                        return;
+                    }
+
+                    option(seasons, parts[0], 'Toute la série');
+                    ApiClient.getSeasons(parts[0], { userId: ApiClient.getCurrentUserId() }).then(function (result) {
+                        result.Items.forEach(function (s) { option(seasons, s.Id, s.Name); });
+                        box.style.display = '';
+                    });
+                }
+
+                $('#sfSearch').addEventListener('input', function () {
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(search, 300);
+                });
+                $('#sfResults').addEventListener('change', onResultChange);
+
+                $('#sfCreateForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    var parts = ($('#sfResults').value || '').split('|');
+                    var itemId = parts[1] === 'Series' ? $('#sfSeason').value : parts[0];
+                    if (!itemId) {
+                        Dashboard.alert('Choisissez un élément.');
+                        return false;
+                    }
+
+                    var expires = $('#sfExpires').value;
+                    Dashboard.showLoadingMsg();
+                    api('POST', 'Sharefin/links', {
+                        ItemId: itemId,
+                        Password: $('#sfPassword').value,
+                        ExpiresUtc: expires ? new Date(expires).toISOString() : null
+                    }).then(function (resp) {
+                        return resp.json ? resp.json() : resp;
+                    }).then(function (link) {
+                        Dashboard.hideLoadingMsg();
+                        $('#sfPassword').value = '';
+                        $('#sfCreated').style.display = '';
+                        $('#sfCreatedUrl').value = publicUrl(link.Path);
+                        return loadLinks();
+                    }, fail);
+                    return false;
+                });
+
+                $('#sfSettingsForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.RememberDays = parseInt($('#sfRememberDays').value, 10) || 30;
+                        config.MaxFailuresPerLink = parseInt($('#sfMaxLink').value, 10) || 5;
+                        config.MaxFailuresPerIp = parseInt($('#sfMaxIp').value, 10) || 20;
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    return false;
+                });
+
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        $('#sfRememberDays').value = config.RememberDays;
+                        $('#sfMaxLink').value = config.MaxFailuresPerLink;
+                        $('#sfMaxIp').value = config.MaxFailuresPerIp;
+                        return loadLinks();
+                    }).then(function () { Dashboard.hideLoadingMsg(); });
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>
