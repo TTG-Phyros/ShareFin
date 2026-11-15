@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "- Corrige la boucle de connexion des liens servis en http",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TTG-Phyros/ShareFin/releases/download/v1.1.1/sharefin_1.1.1.0.zip",
+        "checksum": "8e9c08f6e34a9a49eec95a24f0897bf3",
+        "timestamp": "2026-11-15T23:56:21Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "- Ajoute Sharefin au menu latéral et « Créer un lien de partage » au clic droit",
         "targetAbi": "12.0.0.0",
