@@ -41,6 +41,10 @@ Télécharger `sharefin_<version>.zip` depuis les [Releases](https://github.com/
 
 Dans **Tableau de bord → Extensions → Sharefin**, commencez par ouvrir **Réglages** en bas de page et renseignez l'**adresse publique des liens** (ex. `https://media.exemple.fr`, avec l'URL de base de Jellyfin s'il y en a une). Sans elle, les liens copiés reprennent l'adresse du tableau de bord ; un bandeau prévient quand c'est une adresse locale.
 
+La page est aussi accessible depuis la section **Extensions** du menu latéral du tableau de bord.
+
+**Depuis la bibliothèque** : si le plugin [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) est installé, un clic droit sur un film, une série, une saison ou un épisode (ou le bouton ⋮) propose **Créer un lien de partage**, pour les administrateurs. Cela ouvre directement la fenêtre de création sur cet élément. Sans File Transformation, cette entrée n'apparaît pas ; le reste fonctionne normalement.
+
 **Nouveau lien** ouvre une fenêtre en trois étapes :
 
 1. **Choisir** : rechercher un film, une série ou un épisode ; pour une série, partager toute la série ou une seule saison.

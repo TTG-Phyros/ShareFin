@@ -3,6 +3,7 @@ using System.IO;
 using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
+using Jellyfin.Plugin.Sharefin.Web;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using Microsoft.AspNetCore.DataProtection;
@@ -339,5 +340,17 @@ public sealed class StoreTests : IDisposable
         Assert.True(store.Remove(link.Id));
         Assert.Null(new ShareLinkStore(_dir).GetByToken("abc"));
         Assert.False(store.Remove(link.Id));
+    }
+}
+
+public class IndexPatchTests
+{
+    [Fact]
+    public void InsertsScriptOnceBeforeBody()
+    {
+        var once = IndexPatch.Patch(new PatchPayload { Contents = "<html><body><div></div></body></html>" });
+        Assert.Contains("Créer un lien de partage", once, StringComparison.Ordinal);
+        Assert.EndsWith("</script></body></html>", once, StringComparison.Ordinal);
+        Assert.Equal(once, IndexPatch.Patch(new PatchPayload { Contents = once }));
     }
 }

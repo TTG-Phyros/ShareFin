@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
+using Jellyfin.Plugin.Sharefin.Web;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,5 +20,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ShareCookie>();
         serviceCollection.AddSingleton<LoginThrottle>();
         serviceCollection.AddSingleton<ShareTranscoder>();
+        serviceCollection.AddHostedService<WebInjection>();
     }
 }

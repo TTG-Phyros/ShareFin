@@ -31,6 +31,8 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
     <None Remove="Web\share.html" />
     <EmbeddedResource Include="Web\share.html" />
+    <None Remove="Web\client.js" />
+    <EmbeddedResource Include="Web\client.js" />
   </ItemGroup>
 
   <ItemGroup>
