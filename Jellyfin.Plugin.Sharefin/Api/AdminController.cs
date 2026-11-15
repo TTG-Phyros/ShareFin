@@ -141,6 +141,30 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
+    /// Changes when a link expires, or makes it permanent. A revoked link stays revoked.
+    /// </summary>
+    /// <param name="id">The link id.</param>
+    /// <param name="request">The new expiry, or null for permanent.</param>
+    /// <returns>No content, bad request or not found.</returns>
+    [HttpPost("{id}/expiry")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult ChangeExpiry([FromRoute] Guid id, [FromBody] ExpiryRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var expires = request.ExpiresUtc?.ToUniversalTime();
+        if (expires <= DateTime.UtcNow)
+        {
+            return BadRequest("Expiry must be in the future.");
+        }
+
+        // Cookies keep their own expiry: shortening applies at once (the link is checked on every
+        // request), extending means visitors re-enter the password when their cookie runs out.
+        return _store.Update(id, l => l.ExpiresUtc = expires) ? NoContent() : NotFound();
+    }
+
+    /// <summary>
     /// Deletes a link.
     /// </summary>
     /// <param name="id">The link id.</param>

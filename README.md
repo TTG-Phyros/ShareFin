@@ -28,17 +28,17 @@ Pour un dépôt de plugins, `build.yaml` est prêt pour [jprm](https://github.co
 
 ## Utilisation
 
-Dans **Tableau de bord → Extensions → Sharefin** :
+Dans **Tableau de bord → Extensions → Sharefin**, commencez par ouvrir **Réglages** en bas de page et renseignez l'**adresse publique des liens** (ex. `https://media.exemple.fr`, avec l'URL de base de Jellyfin s'il y en a une). Sans elle, les liens copiés reprennent l'adresse du tableau de bord ; un bandeau prévient quand c'est une adresse locale.
 
-1. Rechercher un film, une série ou un épisode. Pour une série, choisir « Toute la série » ou une saison.
-2. Saisir un mot de passe (6 caractères minimum) et, si besoin, une date d'expiration (vide = permanent).
-3. **Créer le lien**, puis le copier et l'envoyer avec le mot de passe, de préférence par deux canaux différents.
+**Nouveau lien** ouvre une fenêtre en trois étapes :
 
-La liste affiche pour chaque lien l'élément, les dates, le nombre d'accès et le statut, avec les actions **Copier**, **Mot de passe**, **Révoquer** et **Supprimer**. Changer le mot de passe ou révoquer un lien invalide immédiatement tous les mots de passe mémorisés par les destinataires.
+1. **Choisir** : rechercher un film, une série ou un épisode ; pour une série, partager toute la série ou une seule saison.
+2. **Protéger** : un mot de passe facile à dicter est proposé (trois mots et un nombre, régénérable ou modifiable, 6 caractères minimum), puis l'expiration : 24 h, 7 jours (par défaut), 30 jours, jamais ou une date précise.
+3. **Partager** : un message prêt à envoyer, modifiable, contient le lien, le mot de passe et la date de fin. Copiez-le en entier, ou seulement le lien si vous envoyez le mot de passe par un autre canal.
 
-Le lien copié utilise l'adresse par laquelle vous accédez au tableau de bord. Si vous l'administrez depuis le réseau local, remplacez l'adresse par votre domaine public avant de l'envoyer.
+La liste se filtre par statut (actifs, expirent dans les 3 jours, expirés, révoqués, tous) et par titre. Chaque lien affiche son affiche, son contenu (« Saison 2 · 8 épisodes »), son expiration, son nombre d'accès et sa dernière ouverture. Le bouton de copie est toujours visible ; le menu ⋮ propose **Changer le mot de passe**, **Modifier l'expiration**, **Révoquer** et **Supprimer**, ces deux dernières actions avec confirmation. Changer le mot de passe ou révoquer un lien invalide immédiatement tous les mots de passe mémorisés par les destinataires. Prolonger une expiration est possible, mais ceux dont le mot de passe était mémorisé devront le ressaisir à l'ancienne échéance.
 
-Réglages :
+Autres réglages :
 
 - durée de mémorisation du mot de passe pour un lien permanent (30 jours par défaut, renouvelée à chaque visite) ;
 - nombre d'échecs tolérés par lien (5) et par adresse IP (20).

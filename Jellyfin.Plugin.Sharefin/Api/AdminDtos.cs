@@ -62,3 +62,10 @@ public class AuthRequest
     /// <summary>Gets or sets the password.</summary>
     public string? Password { get; set; }
 }
+
+/// <summary>Request body to change a link expiry.</summary>
+public class ExpiryRequest
+{
+    /// <summary>Gets or sets the new expiry date, or null for a permanent link.</summary>
+    public DateTime? ExpiresUtc { get; set; }
+}

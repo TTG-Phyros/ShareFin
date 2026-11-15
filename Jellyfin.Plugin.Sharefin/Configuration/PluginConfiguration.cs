@@ -9,6 +9,12 @@ namespace Jellyfin.Plugin.Sharefin.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
+    /// Gets or sets the public address links are copied with (e.g. https://media.example.com),
+    /// so an admin browsing from the LAN does not send a local address. Empty: the dashboard's address.
+    /// </summary>
+    public string PublicBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets how many days a remembered password lasts on a permanent link, renewed on each visit.
     /// </summary>
     public int RememberDays { get; set; } = 30;

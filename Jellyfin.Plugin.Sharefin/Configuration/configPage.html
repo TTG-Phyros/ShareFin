@@ -5,85 +5,247 @@
     <title>Sharefin</title>
 </head>
 <body>
-    <div id="SharefinConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div id="SharefinConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+        <style>
+            #SharefinConfigPage { --sf-accent: #00a4dc; --sf-line: color-mix(in srgb, currentColor 14%, transparent); --sf-soft: color-mix(in srgb, currentColor 72%, transparent); }
+            #SharefinConfigPage [hidden] { display: none !important; }
+            .sfHead { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; }
+            .sfHead h2 { flex: 1; margin: .6em 0; }
+            .sfBtn { display: inline-flex; align-items: center; gap: .4em; margin: 0; }
+            .sfBtn .material-icons { font-size: 1.3em; }
+            .sfDanger { background: #c62828 !important; color: #fff !important; }
+            .sfWarn { display: flex; gap: .8em; align-items: center; flex-wrap: wrap; padding: .7em 1em; border-radius: .3em; border: 1px solid #e0a03d; background: color-mix(in srgb, #e0a03d 14%, transparent); margin: .5em 0 1em; }
+            .sfWarn p { flex: 1; margin: 0; min-width: 14em; }
+            .sfToolbar { display: flex; flex-wrap: wrap; gap: .6em; align-items: center; margin: .5em 0 1em; }
+            .sfChips { display: flex; flex-wrap: wrap; gap: .4em; }
+            .sfChip { font: inherit; font-size: .9em; color: inherit; background: transparent; border: 1px solid var(--sf-line); border-radius: 1em; padding: .35em .9em; cursor: pointer; }
+            .sfChip:hover { border-color: var(--sf-soft); }
+            .sfChip[aria-pressed="true"] { background: color-mix(in srgb, var(--sf-accent) 28%, transparent); border-color: var(--sf-accent); }
+            .sfChip:focus-visible, .sfIconBtn:focus-visible, .sfResult:focus-visible, .sfMenu button:focus-visible { outline: 2px solid var(--sf-accent); outline-offset: 2px; }
+            .sfQuery { margin-left: auto; width: 15em; max-width: 100%; }
+            .sfList { border-radius: .3em; overflow: hidden; }
+            .sfRow { display: grid; grid-template-columns: 3em minmax(0, 1fr) 11em 6.5em auto; grid-template-areas: "poster main state stats actions"; gap: .3em 1em; align-items: center; padding: .6em .9em; border-top: 1px solid var(--sf-line); }
+            .sfRow:first-child { border-top: 0; }
+            .sfRow.sfOff .sfMain, .sfRow.sfOff .sfPoster { opacity: .55; }
+            .sfPoster { grid-area: poster; width: 3em; height: 4.4em; object-fit: cover; border-radius: .2em; background: color-mix(in srgb, currentColor 10%, transparent); display: flex; align-items: center; justify-content: center; }
+            .sfMain { grid-area: main; min-width: 0; }
+            .sfTitle { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .sfSub, .sfMeta { font-size: .85em; color: var(--sf-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .sfState { grid-area: state; min-width: 0; }
+            .sfStats { grid-area: stats; font-size: .85em; color: var(--sf-soft); }
+            .sfStats .material-icons { font-size: 1.1em; vertical-align: -.2em; }
+            .sfActions { grid-area: actions; display: flex; gap: .2em; }
+            .sfBadge { display: inline-flex; align-items: center; gap: .45em; padding: .15em .65em; border-radius: 1em; background: color-mix(in srgb, currentColor 10%, transparent); font-size: .85em; white-space: nowrap; }
+            .sfDot { width: .55em; height: .55em; border-radius: 50%; flex: none; }
+            .sfIconBtn { background: transparent; border: 0; color: inherit; width: 2.4em; height: 2.4em; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+            .sfIconBtn:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+            .sfEmpty { padding: 2em 1em; text-align: center; color: var(--sf-soft); }
+            .sfMenu { margin: 0; inset: auto; padding: .3em; border: 1px solid var(--sf-line); border-radius: .3em; min-width: 14em; color: inherit; }
+            .sfMenu button { display: flex; width: 100%; align-items: center; gap: .6em; font: inherit; color: inherit; background: transparent; border: 0; border-radius: .2em; padding: .55em .7em; cursor: pointer; text-align: left; }
+            .sfMenu button:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+            .sfMenu .sfMenuDanger { color: #ef5350; border-top: 1px solid var(--sf-line); border-radius: 0; margin-top: .2em; }
+            .sfSettings { margin-top: 2em; border-radius: .3em; padding: 0 1em; }
+            .sfSettings summary { cursor: pointer; padding: 1em 0; font-weight: 600; display: flex; align-items: center; gap: .5em; }
+            .sfSettings summary::-webkit-details-marker { display: none; }
+            .sfSettings[open] summary .sfChevron { transform: rotate(180deg); }
+            .sfGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: 1em; }
+            .sfField label, .sfLabel { display: block; font-size: .9em; margin-bottom: .35em; }
+            .sfField input, .sfDialog input, .sfDialog textarea { width: 100%; box-sizing: border-box; }
+            .sfHint { font-size: .85em; color: var(--sf-soft); margin: .35em 0 0; }
+            .sfHint.sfWarnText { color: #e0a03d; }
+            .sfError { color: #ef5350; font-size: .9em; min-height: 1.3em; margin: .4em 0 0; }
+            .sfDialog { width: min(36em, calc(100vw - 2em)); max-height: calc(100vh - 2em); padding: 0; color: inherit; border: 1px solid var(--sf-line); margin: auto !important; inset: 0; }
+            .sfDialog .sfLabel { margin-top: 1em; }
+            .sfDialog .sfDlgBody > :first-child, .sfDialog section > .sfLabel:first-child { margin-top: 0; }
+            .sfDialog::backdrop { background: rgba(0, 0, 0, .6); }
+            .sfDialog form { display: flex; flex-direction: column; max-height: calc(100vh - 2em); }
+            .sfDlgHead { display: flex; align-items: center; gap: 1em; padding: 1em 1.2em .4em; }
+            .sfDlgHead h3 { margin: 0; flex: 1; }
+            .sfSteps { display: flex; gap: 1em; list-style: none; margin: 0 1.2em; padding: 0 0 .6em; font-size: .85em; color: var(--sf-soft); border-bottom: 1px solid var(--sf-line); }
+            .sfSteps li[aria-current="step"] { color: inherit; font-weight: 600; }
+            .sfSteps li[aria-current="step"]::before { background: var(--sf-accent); }
+            .sfSteps li::before { content: counter(step); counter-increment: step; display: inline-flex; width: 1.5em; height: 1.5em; border-radius: 50%; align-items: center; justify-content: center; margin-right: .4em; background: var(--sf-line); color: inherit; font-size: .85em; }
+            .sfSteps { counter-reset: step; }
+            .sfDlgBody { padding: 1em 1.2em; overflow: auto; }
+            .sfDlgFoot { display: flex; justify-content: flex-end; gap: .5em; padding: .8em 1.2em 1.1em; border-top: 1px solid var(--sf-line); flex-wrap: wrap; }
+            .sfResults { display: grid; gap: .2em; max-height: 17em; overflow: auto; margin: .6em 0; }
+            .sfResult { display: flex; gap: .8em; align-items: center; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: .3em; padding: .3em; cursor: pointer; }
+            .sfResult:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+            .sfResult[aria-pressed="true"] { border-color: var(--sf-accent); background: color-mix(in srgb, var(--sf-accent) 18%, transparent); }
+            .sfResult .sfPoster { width: 2.4em; height: 3.5em; }
+            .sfPick { display: flex; gap: .8em; align-items: center; padding: .5em; border-radius: .3em; background: color-mix(in srgb, currentColor 7%, transparent); margin-bottom: 1em; }
+            .sfPick .sfPoster { width: 2.4em; height: 3.5em; }
+            .sfRow2 { display: flex; gap: .4em; align-items: center; }
+            .sfRow2 input { flex: 1; min-width: 0; }
+            .sfMono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+            .sfMessage { min-height: 9em; resize: vertical; font: inherit; line-height: 1.5; }
+            .sfFieldWide { grid-column: 1 / -1; max-width: 36em; }
+            .sfToast { position: fixed; left: 50%; bottom: 1.5em; transform: translateX(-50%); padding: .7em 1.2em; border-radius: .3em; background: #303030; color: #fff; z-index: 1000; max-width: calc(100vw - 2em); }
+            @media (max-width: 760px) {
+                .sfRow { grid-template-columns: 3em minmax(0, 1fr) auto; grid-template-areas: "poster main actions" "poster state actions"; }
+                .sfStats { display: none; }
+                .sfQuery { margin-left: 0; width: 100%; }
+            }
+        </style>
+
         <div data-role="content">
             <div class="content-primary">
-                <h2>Liens de partage</h2>
-                <div style="overflow-x:auto">
-                    <table id="sfLinks" style="width:100%;border-collapse:collapse">
-                        <thead>
-                            <tr style="text-align:left">
-                                <th>Élément</th><th>Créé</th><th>Expire</th><th>Accès</th><th>Statut</th><th></th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-                <p id="sfEmpty" class="fieldDescription">Aucun lien pour l'instant.</p>
-
-                <h2>Nouveau lien</h2>
-                <form id="sfCreateForm">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfSearch">Rechercher un film, une série ou un épisode</label>
-                        <input id="sfSearch" type="search" is="emby-input" autocomplete="off" />
-                    </div>
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="sfResults">Résultat</label>
-                        <select id="sfResults" is="emby-select" class="emby-select-withcolor emby-select"></select>
-                    </div>
-                    <div class="selectContainer" id="sfSeasonBox" style="display:none">
-                        <label class="selectLabel" for="sfSeason">Partager</label>
-                        <select id="sfSeason" is="emby-select" class="emby-select-withcolor emby-select"></select>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfPassword">Mot de passe (6 caractères minimum)</label>
-                        <input id="sfPassword" type="text" is="emby-input" required minlength="6" maxlength="256" autocomplete="off" />
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfExpires">Expiration (vide = lien permanent)</label>
-                        <input id="sfExpires" type="datetime-local" is="emby-input" />
-                    </div>
-                    <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Créer le lien</span></button>
-                </form>
-                <div id="sfCreated" style="display:none;margin-top:1em">
-                    <div class="fieldDescription">Lien créé :</div>
-                    <input id="sfCreatedUrl" type="text" is="emby-input" readonly />
+                <div class="sfHead">
+                    <h2>Liens de partage</h2>
+                    <button id="sfNew" type="button" class="raised button-submit emby-button sfBtn"><span class="material-icons add" aria-hidden="true"></span><span>Nouveau lien</span></button>
                 </div>
 
-                <h2>Réglages</h2>
-                <form id="sfSettingsForm">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfRememberDays">Mémorisation du mot de passe pour un lien permanent (jours)</label>
-                        <input id="sfRememberDays" type="number" is="emby-input" min="1" max="3650" />
-                        <div class="fieldDescription">Durée glissante, renouvelée à chaque visite. Pour un lien temporaire, la mémorisation dure jusqu'à l'expiration du lien.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfMaxLink">Échecs de mot de passe tolérés par lien</label>
-                        <input id="sfMaxLink" type="number" is="emby-input" min="1" max="100" />
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="sfMaxIp">Échecs de mot de passe tolérés par adresse IP</label>
-                        <input id="sfMaxIp" type="number" is="emby-input" min="1" max="1000" />
-                        <div class="fieldDescription">Au-delà, blocage d'une minute, doublé à chaque nouveau blocage (15 minutes au plus).</div>
-                    </div>
-                    <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Enregistrer</span></button>
-                </form>
+                <div id="sfLocalWarn" class="sfWarn" role="note" hidden>
+                    <span class="material-icons warning" aria-hidden="true"></span>
+                    <p>Les liens copiés utiliseront l'adresse locale <strong id="sfLocalHost"></strong>, inaccessible depuis Internet.</p>
+                    <button id="sfOpenSettings" type="button" class="raised emby-button">Définir l'adresse publique</button>
+                </div>
+
+                <div class="sfToolbar">
+                    <div id="sfFilters" class="sfChips" role="group" aria-label="Filtrer par statut"></div>
+                    <input id="sfQuery" class="emby-input sfQuery" type="search" placeholder="Filtrer par titre" aria-label="Filtrer par titre" autocomplete="off" />
+                </div>
+
+                <div id="sfList" class="paperList sfList" aria-live="polite"></div>
+
+                <details id="sfSettings" class="paperList sfSettings">
+                    <summary><span class="material-icons settings" aria-hidden="true"></span><span style="flex:1">Réglages</span><span class="material-icons expand_more sfChevron" aria-hidden="true"></span></summary>
+                    <form id="sfSettingsForm" novalidate>
+                        <div class="sfGrid">
+                            <div class="sfField sfFieldWide">
+                                <label for="sfPublicUrl">Adresse publique des liens</label>
+                                <input id="sfPublicUrl" class="emby-input" type="url" placeholder="https://media.exemple.fr" autocomplete="off" />
+                                <p id="sfPublicHint" class="sfHint">Adresse de Jellyfin vue depuis Internet, URL de base comprise. Vide : l'adresse du tableau de bord.</p>
+                            </div>
+                            <div class="sfField">
+                                <label for="sfRememberDays">Mémoriser le mot de passe (jours)</label>
+                                <input id="sfRememberDays" class="emby-input" type="number" min="1" max="3650" required />
+                                <p class="sfHint">Pour un lien permanent, renouvelé à chaque visite. Un lien temporaire est mémorisé jusqu'à son expiration.</p>
+                            </div>
+                            <div class="sfField">
+                                <label for="sfMaxLink">Échecs tolérés par lien</label>
+                                <input id="sfMaxLink" class="emby-input" type="number" min="1" max="100" required />
+                            </div>
+                            <div class="sfField">
+                                <label for="sfMaxIp">Échecs tolérés par adresse IP</label>
+                                <input id="sfMaxIp" class="emby-input" type="number" min="1" max="1000" required />
+                                <p class="sfHint">Au-delà, blocage d'une minute, doublé à chaque nouveau blocage (15 minutes au plus).</p>
+                            </div>
+                        </div>
+                        <p id="sfSettingsError" class="sfError" role="alert"></p>
+                        <div style="padding-bottom:1em">
+                            <button type="submit" class="raised button-submit emby-button">Enregistrer</button>
+                        </div>
+                    </form>
+                </details>
             </div>
         </div>
+
+        <div id="sfMenu" class="paperList sfMenu" popover role="menu" aria-label="Actions"></div>
+
+        <dialog id="sfCreate" class="dialog sfDialog" aria-labelledby="sfCreateTitle">
+            <form id="sfCreateForm" novalidate>
+                <div class="sfDlgHead">
+                    <h3 id="sfCreateTitle">Nouveau lien</h3>
+                    <button type="button" class="sfIconBtn" data-close aria-label="Fermer"><span class="material-icons close" aria-hidden="true"></span></button>
+                </div>
+                <ol class="sfSteps">
+                    <li data-step-label="1">Choisir</li>
+                    <li data-step-label="2">Protéger</li>
+                    <li data-step-label="3">Partager</li>
+                </ol>
+                <div class="sfDlgBody">
+                    <section data-step="1">
+                        <label class="sfLabel" for="sfSearch">Film, série ou épisode</label>
+                        <input id="sfSearch" class="emby-input" type="search" placeholder="Titre" autocomplete="off" />
+                        <div id="sfResults" class="sfResults" role="group" aria-label="Résultats"></div>
+                        <div id="sfScopeBox" hidden>
+                            <div class="sfLabel" id="sfScopeLabel">Partager</div>
+                            <div id="sfScope" class="sfChips" role="group" aria-labelledby="sfScopeLabel"></div>
+                        </div>
+                        <p id="sfErr1" class="sfError" role="alert"></p>
+                    </section>
+                    <section data-step="2" hidden>
+                        <div id="sfPicked" class="sfPick"></div>
+                        <label class="sfLabel" for="sfPwd">Mot de passe</label>
+                        <div class="sfRow2">
+                            <input id="sfPwd" class="emby-input sfMono" type="text" minlength="6" maxlength="256" autocomplete="off" spellcheck="false" />
+                            <button type="button" id="sfGen" class="sfIconBtn" aria-label="Générer un autre mot de passe" title="Générer"><span class="material-icons refresh" aria-hidden="true"></span></button>
+                        </div>
+                        <p class="sfHint">6 caractères minimum. Le mot de passe proposé est facile à dicter.</p>
+                        <div class="sfLabel" id="sfExpLabel" style="margin-top:1.2em">Expiration</div>
+                        <div id="sfExpiry" class="sfChips" role="group" aria-labelledby="sfExpLabel"></div>
+                        <input id="sfExpiryDate" class="emby-input" type="datetime-local" aria-label="Date d'expiration" style="margin-top:.6em" hidden />
+                        <p id="sfErr2" class="sfError" role="alert"></p>
+                    </section>
+                    <section data-step="3" hidden>
+                        <p style="margin-top:0"><span class="material-icons check_circle" aria-hidden="true" style="color:#4caf50;vertical-align:-.25em"></span> Lien créé. Message à envoyer, modifiable :</p>
+                        <label class="sfLabel" for="sfMessage" hidden>Message</label>
+                        <textarea id="sfMessage" class="emby-input sfMessage"></textarea>
+                        <p class="sfHint">Pour plus de sécurité, envoyez le mot de passe par un autre canal que le lien.</p>
+                    </section>
+                </div>
+                <div class="sfDlgFoot">
+                    <button type="button" id="sfBack" class="raised emby-button">Retour</button>
+                    <button type="button" id="sfCopyLink" class="raised emby-button sfBtn"><span class="material-icons link" aria-hidden="true"></span><span>Copier le lien</span></button>
+                    <button type="submit" id="sfNext" class="raised button-submit emby-button sfBtn">Suivant</button>
+                </div>
+            </form>
+        </dialog>
+
+        <dialog id="sfEdit" class="dialog sfDialog" aria-labelledby="sfEditTitle">
+            <form id="sfEditForm" novalidate>
+                <div class="sfDlgHead">
+                    <h3 id="sfEditTitle"></h3>
+                    <button type="button" class="sfIconBtn" data-close aria-label="Fermer"><span class="material-icons close" aria-hidden="true"></span></button>
+                </div>
+                <div id="sfEditBody" class="sfDlgBody"></div>
+                <div class="sfDlgFoot">
+                    <button type="button" class="raised emby-button" data-close>Annuler</button>
+                    <button type="submit" id="sfEditOk" class="raised button-submit emby-button"></button>
+                </div>
+            </form>
+        </dialog>
+
+        <div id="sfToast" class="sfToast" role="status" aria-live="polite" hidden></div>
+
         <script type="text/javascript">
             (function () {
                 var pluginId = '342e21ed-b7a5-416a-96d6-8e8e4b325639';
                 var page = document.querySelector('#SharefinConfigPage');
                 var $ = function (sel) { return page.querySelector(sel); };
-                var searchTimer;
+                var WORDS = ['abeille', 'abricot', 'agneau', 'ancre', 'arbre', 'argent', 'avion', 'balcon', 'baleine', 'bambou', 'bateau', 'biscuit', 'bouleau', 'boussole', 'brioche', 'cactus',
+                    'canard', 'carotte', 'castor', 'cerise', 'chameau', 'chapeau', 'citron', 'cobalt', 'comete', 'corail', 'crayon', 'dauphin', 'domino', 'ecureuil', 'etoile', 'falaise',
+                    'faucon', 'figue', 'flamant', 'fusee', 'galet', 'girafe', 'glacier', 'grenade', 'hibou', 'igloo', 'jardin', 'kiwi', 'lagune', 'lavande', 'lion', 'loutre',
+                    'mangue', 'marmotte', 'melon', 'meteore', 'moulin', 'nuage', 'olive', 'orage', 'panda', 'papaye', 'phare', 'pingouin', 'prairie', 'renard', 'ruche', 'tigre'];
+                var EXPIRY = [{ label: '24 h', days: 1 }, { label: '7 jours', days: 7 }, { label: '30 jours', days: 30 }, { label: 'Jamais', days: null }, { label: 'Date…', days: 'custom' }];
+                var FILTERS = [
+                    { id: 'active', label: 'Actifs', test: function (l) { return l.Status === 'Active'; } },
+                    { id: 'soon', label: 'Expirent bientôt', test: function (l) { return expiresSoon(l); } },
+                    { id: 'expired', label: 'Expirés', test: function (l) { return l.Status === 'Expired' || l.Status === 'Unavailable'; } },
+                    { id: 'revoked', label: 'Révoqués', test: function (l) { return l.Status === 'Revoked'; } },
+                    { id: 'all', label: 'Tous', test: function () { return true; } }
+                ];
+                var TYPES = { Movie: 'Film', Series: 'Série', Season: 'Saison', Episode: 'Épisode' };
+                var rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' });
+                var state = { links: [], details: {}, config: {}, filter: 'active', query: '' };
+                var create = {};
+                var searchTimer, toastTimer;
 
-                function publicUrl(path) {
-                    return ApiClient.serverAddress().replace(/\/$/, '') + '/' + path;
+                // ---------- helpers ----------
+                function el(tag, props, children) {
+                    var e = document.createElement(tag);
+                    Object.keys(props || {}).forEach(function (k) {
+                        if (k === 'text') { e.textContent = props[k]; }
+                        else if (k === 'class') { e.className = props[k]; }
+                        else if (k.indexOf('on') === 0) { e.addEventListener(k.slice(2), props[k]); }
+                        else if (props[k] !== null && props[k] !== undefined && props[k] !== false) { e.setAttribute(k, props[k] === true ? '' : props[k]); }
+                    });
+                    (children || []).forEach(function (c) { if (c) { e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); } });
+                    return e;
                 }
 
-                function fmt(d) {
-                    return d ? new Date(d).toLocaleString() : 'Jamais';
-                }
+                function icon(name) { return el('span', { class: 'material-icons ' + name, 'aria-hidden': 'true' }); }
 
                 function api(method, path, body) {
                     return ApiClient.ajax({
@@ -94,177 +256,578 @@
                     });
                 }
 
-                function cell(tr, text) {
-                    var td = document.createElement('td');
-                    td.textContent = text;
-                    td.style.padding = '.4em .6em .4em 0';
-                    tr.appendChild(td);
-                    return td;
+                function asJson(resp) { return resp && resp.json ? resp.json() : resp; }
+
+                function errorText(err) {
+                    return err && err.text ? err.text().then(function (t) { return t || 'Erreur ' + err.status; }) : Promise.resolve('Le serveur ne répond pas.');
                 }
 
-                function button(td, label, onClick) {
-                    // Styled by classes; jellyfin-web's createElement does not accept the { is } option.
-                    var b = document.createElement('button');
-                    b.className = 'raised emby-button';
-                    b.style.margin = '.15em';
-                    b.type = 'button';
-                    b.textContent = label;
-                    b.addEventListener('click', onClick);
-                    td.appendChild(b);
+                function toast(text) {
+                    var t = $('#sfToast');
+                    t.textContent = text;
+                    t.hidden = false;
+                    clearTimeout(toastTimer);
+                    toastTimer = setTimeout(function () { t.hidden = true; }, 3500);
                 }
 
-                function fail(err) {
-                    Dashboard.hideLoadingMsg();
-                    var msg = 'Erreur';
-                    if (err && err.text) {
-                        err.text().then(function (t) { Dashboard.alert(t || msg); });
+                function copy(text, done) {
+                    var ok = function () { toast(done); };
+                    if (navigator.clipboard && window.isSecureContext) {
+                        navigator.clipboard.writeText(text).then(ok, function () { legacyCopy(text) && ok(); });
+                    } else if (legacyCopy(text)) {
+                        ok();
                     } else {
-                        Dashboard.alert(msg);
+                        toast('Copie impossible, sélectionnez le texte à la main.');
                     }
                 }
 
-                function loadLinks() {
-                    return ApiClient.getJSON(ApiClient.getUrl('Sharefin/links')).then(function (links) {
-                        var body = $('#sfLinks tbody');
-                        body.innerHTML = '';
-                        $('#sfEmpty').style.display = links.length ? 'none' : '';
-                        links.forEach(function (l) {
-                            var tr = document.createElement('tr');
-                            cell(tr, l.ItemName + ' (' + l.ItemType + ')');
-                            cell(tr, fmt(l.CreatedUtc));
-                            cell(tr, l.ExpiresUtc ? fmt(l.ExpiresUtc) : 'Permanent');
-                            cell(tr, String(l.AccessCount));
-                            cell(tr, { Active: 'Actif', Expired: 'Expiré', Revoked: 'Révoqué', Unavailable: 'Élément supprimé' }[l.Status] || l.Status);
-                            var actions = cell(tr, '');
-                            button(actions, 'Copier', function () {
-                                navigator.clipboard.writeText(publicUrl(l.Path)).then(function () { Dashboard.alert('Lien copié'); });
-                            });
-                            button(actions, 'Mot de passe', function () {
-                                var pwd = prompt('Nouveau mot de passe (6 caractères minimum). Les visiteurs devront le ressaisir.');
-                                if (pwd) {
-                                    api('POST', 'Sharefin/links/' + l.Id + '/password', { Password: pwd }).then(loadLinks, fail);
-                                }
-                            });
-                            if (l.Status !== 'Revoked') {
-                                button(actions, 'Révoquer', function () {
-                                    if (confirm('Révoquer ce lien ? Il cessera de fonctionner immédiatement.')) {
-                                        api('POST', 'Sharefin/links/' + l.Id + '/revoke').then(loadLinks, fail);
-                                    }
-                                });
-                            }
-                            button(actions, 'Supprimer', function () {
-                                if (confirm('Supprimer définitivement ce lien ?')) {
-                                    api('DELETE', 'Sharefin/links/' + l.Id).then(loadLinks, fail);
-                                }
-                            });
-                            body.appendChild(tr);
-                        });
-                    }, fail);
+                // The clipboard API needs HTTPS; a dashboard opened over plain HTTP on the LAN falls back here.
+                function legacyCopy(text) {
+                    var ta = el('textarea', { style: 'position:fixed;opacity:0', 'aria-hidden': 'true' });
+                    ta.value = text;
+                    page.appendChild(ta);
+                    ta.select();
+                    var ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                    ta.remove();
+                    return ok;
                 }
 
-                function option(select, value, text) {
-                    var o = document.createElement('option');
-                    o.value = value;
-                    o.textContent = text;
-                    select.appendChild(o);
+                function relative(date) {
+                    var diff = (new Date(date) - Date.now()) / 1000;
+                    var units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+                    for (var i = 0; i < units.length; i++) {
+                        if (Math.abs(diff) >= units[i][1]) { return rtf.format(Math.round(diff / units[i][1]), units[i][0]); }
+                    }
+                    return diff >= 0 ? 'dans moins d\'une minute' : 'à l\'instant';
+                }
+
+                function longDate(date) {
+                    return new Date(date).toLocaleString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                }
+
+                function plural(n, one, many) { return n + ' ' + (n > 1 ? many : one); }
+
+                function expiresSoon(l) {
+                    return l.Status === 'Active' && !!l.ExpiresUtc && new Date(l.ExpiresUtc) - Date.now() < 3 * 86400000;
+                }
+
+                function generatePassword() {
+                    var bytes = crypto.getRandomValues(new Uint8Array(3));
+                    var n = crypto.getRandomValues(new Uint16Array(1))[0] % 900 + 100;
+                    // 64 words, so masking 6 bits keeps every word equally likely.
+                    return [WORDS[bytes[0] & 63], WORDS[bytes[1] & 63], WORDS[bytes[2] & 63], n].join('-');
+                }
+
+                function isLocalHost(host) {
+                    return host === 'localhost' || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)
+                        || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || /\.(local|lan|home|internal)$/.test(host) || host.indexOf('.') < 0 || host.charAt(0) === '[';
+                }
+
+                function baseUrl() {
+                    return (state.config.PublicBaseUrl || ApiClient.serverAddress()).replace(/\/+$/, '');
+                }
+
+                function linkUrl(path) { return baseUrl() + '/' + path; }
+
+                function posterUrl(i, height) {
+                    if (!i) { return null; }
+                    if ((i.Type === 'Episode' || i.Type === 'Season') && i.SeriesPrimaryImageTag) {
+                        return ApiClient.getScaledImageUrl(i.SeriesId, { type: 'Primary', maxHeight: height, tag: i.SeriesPrimaryImageTag });
+                    }
+                    if (i.ImageTags && i.ImageTags.Primary) {
+                        return ApiClient.getScaledImageUrl(i.Id, { type: 'Primary', maxHeight: height, tag: i.ImageTags.Primary });
+                    }
+                    return null;
+                }
+
+                function poster(i) {
+                    var src = posterUrl(i, 132);
+                    return src ? el('img', { class: 'sfPoster', src: src, alt: '', loading: 'lazy' }) : el('div', { class: 'sfPoster' }, [icon('movie')]);
+                }
+
+                function describe(i, fallbackName, fallbackType) {
+                    if (!i) { return { title: fallbackName, sub: TYPES[fallbackType] || fallbackType }; }
+                    switch (i.Type) {
+                        case 'Series': return { title: i.Name, sub: 'Série' + (i.ChildCount ? ' · ' + plural(i.ChildCount, 'saison', 'saisons') : '') };
+                        case 'Season': return { title: i.SeriesName || i.Name, sub: i.Name + (i.ChildCount ? ' · ' + plural(i.ChildCount, 'épisode', 'épisodes') : '') };
+                        case 'Episode': return { title: i.SeriesName || i.Name, sub: 'S' + (i.ParentIndexNumber || 0) + 'E' + (i.IndexNumber || 0) + ' · ' + i.Name };
+                        default: return { title: i.Name, sub: (TYPES[i.Type] || i.Type) + (i.ProductionYear ? ' · ' + i.ProductionYear : '') };
+                    }
+                }
+
+                function getItems(ids) {
+                    var chunks = [];
+                    for (var i = 0; i < ids.length; i += 50) { chunks.push(ids.slice(i, i + 50)); }
+                    return Promise.all(chunks.map(function (chunk) {
+                        return ApiClient.getItems(ApiClient.getCurrentUserId(), { Ids: chunk.join(','), Fields: 'ChildCount,ProductionYear', EnableImageTypes: 'Primary' })
+                            .then(function (r) { return r.Items; }, function () { return []; });
+                    })).then(function (lists) { return [].concat.apply([], lists); });
+                }
+
+                function openDialog(d) {
+                    d.showModal();
+                }
+
+                [].forEach.call(page.querySelectorAll('dialog'), function (d) {
+                    d.addEventListener('click', function (e) {
+                        if (e.target === d || e.target.closest('[data-close]')) { d.close(); }
+                    });
+                });
+
+                // ---------- list ----------
+                function loadLinks() {
+                    return ApiClient.getJSON(ApiClient.getUrl('Sharefin/links')).then(function (links) {
+                        state.links = links;
+                        var missing = links.map(function (l) { return l.ItemId; }).filter(function (id, i, a) { return !state.details[id] && a.indexOf(id) === i; });
+                        render();
+                        if (missing.length) {
+                            getItems(missing).then(function (items) {
+                                items.forEach(function (it) { state.details[it.Id] = it; });
+                                render();
+                            });
+                        }
+                    }, function (err) { errorText(err).then(toast); });
+                }
+
+                function detailsFor(l) { return state.details[l.ItemId]; }
+
+                function renderFilters() {
+                    var box = $('#sfFilters');
+                    box.textContent = '';
+                    FILTERS.forEach(function (f) {
+                        var count = state.links.filter(f.test).length;
+                        box.appendChild(el('button', {
+                            type: 'button',
+                            class: 'sfChip',
+                            'aria-pressed': String(state.filter === f.id),
+                            onclick: function () { state.filter = f.id; render(); }
+                        }, [f.label + ' ' + count]));
+                    });
+                }
+
+                function badge(l) {
+                    if (l.Status === 'Revoked') { return [badgeEl('#ef5350', 'Révoqué'), 'Révoqué ' + relative(l.RevokedUtc || l.CreatedUtc)]; }
+                    if (l.Status === 'Unavailable') { return [badgeEl('#9e9e9e', 'Élément supprimé'), 'Créé ' + relative(l.CreatedUtc)]; }
+                    if (l.Status === 'Expired') { return [badgeEl('#9e9e9e', 'Expiré'), 'Le ' + longDate(l.ExpiresUtc)]; }
+                    if (!l.ExpiresUtc) { return [badgeEl('#4caf50', 'Permanent'), 'Créé ' + relative(l.CreatedUtc)]; }
+                    return [badgeEl(expiresSoon(l) ? '#e0a03d' : '#4caf50', 'Expire ' + relative(l.ExpiresUtc)), longDate(l.ExpiresUtc)];
+                }
+
+                function badgeEl(color, text) {
+                    return el('span', { class: 'sfBadge' }, [el('span', { class: 'sfDot', style: 'background:' + color }), text]);
+                }
+
+                function render() {
+                    renderFilters();
+                    var list = $('#sfList');
+                    list.textContent = '';
+                    var filter = FILTERS.filter(function (f) { return f.id === state.filter; })[0];
+                    var q = state.query.trim().toLowerCase();
+                    var shown = state.links.filter(filter.test).filter(function (l) {
+                        if (!q) { return true; }
+                        var d = describe(detailsFor(l), l.ItemName, l.ItemType);
+                        return (d.title + ' ' + d.sub + ' ' + l.ItemName).toLowerCase().indexOf(q) >= 0;
+                    });
+
+                    if (!shown.length) {
+                        list.appendChild(el('div', { class: 'sfEmpty' }, state.links.length
+                            ? ['Aucun lien ne correspond à ce filtre.']
+                            : ['Créez votre premier lien pour partager un film, une série, une saison ou un épisode.', el('br'), el('br'),
+                                el('button', { type: 'button', class: 'raised button-submit emby-button', onclick: openCreate }, ['Nouveau lien'])]));
+                        return;
+                    }
+
+                    shown.forEach(function (l) {
+                        var d = describe(detailsFor(l), l.ItemName, l.ItemType);
+                        var b = badge(l);
+                        var active = l.Status === 'Active';
+                        var menuBtn = el('button', { type: 'button', class: 'sfIconBtn', 'aria-label': 'Actions pour ' + d.title + ', ' + d.sub, 'aria-haspopup': 'menu', title: 'Actions' }, [icon('more_vert')]);
+                        menuBtn.addEventListener('click', function () { openMenu(menuBtn, l, d); });
+                        list.appendChild(el('div', { class: 'sfRow' + (active ? '' : ' sfOff') }, [
+                            poster(detailsFor(l)),
+                            el('div', { class: 'sfMain' }, [el('div', { class: 'sfTitle', text: d.title }), el('div', { class: 'sfSub', text: d.sub })]),
+                            el('div', { class: 'sfState' }, [b[0], el('div', { class: 'sfMeta', text: b[1] })]),
+                            el('div', { class: 'sfStats' }, [
+                                el('div', null, [icon('visibility'), ' ' + plural(l.AccessCount, 'accès', 'accès')]),
+                                el('div', { text: l.LastAccessUtc ? relative(l.LastAccessUtc) : 'Jamais ouvert' })
+                            ]),
+                            el('div', { class: 'sfActions' }, [
+                                el('button', {
+                                    type: 'button', class: 'sfIconBtn', title: 'Copier le lien', 'aria-label': 'Copier le lien de ' + d.title + ', ' + d.sub,
+                                    style: active ? null : 'visibility:hidden', onclick: function () { copy(linkUrl(l.Path), 'Lien copié'); }
+                                }, [icon('content_copy')]),
+                                menuBtn
+                            ])
+                        ]));
+                    });
+                }
+
+                // ---------- row menu ----------
+                var menu = $('#sfMenu');
+                var menuOwner = null;
+
+                function openMenu(button, l, d) {
+                    if (menuOwner === button && menu.matches(':popover-open')) { menu.hidePopover(); return; }
+                    menu.textContent = '';
+                    var items = [['content_copy', 'Copier le lien', function () { copy(linkUrl(l.Path), 'Lien copié'); }, l.Status === 'Active']];
+                    if (l.Status !== 'Revoked') {
+                        items.push(['key', 'Changer le mot de passe', function () { editPassword(l, d); }, true]);
+                        items.push(['event', 'Modifier l\'expiration', function () { editExpiry(l, d); }, true]);
+                        items.push(['block', 'Révoquer', function () { confirmAction(l, d, 'revoke'); }, true]);
+                    }
+                    items.push(['delete', 'Supprimer', function () { confirmAction(l, d, 'delete'); }, true, 'sfMenuDanger']);
+                    items.filter(function (i) { return i[3]; }).forEach(function (i) {
+                        menu.appendChild(el('button', {
+                            type: 'button', role: 'menuitem', class: i[4] || null,
+                            onclick: function () { menu.hidePopover(); i[2](); }
+                        }, [icon(i[0]), i[1]]));
+                    });
+                    menuOwner = button;
+                    menu.showPopover();
+                    var r = button.getBoundingClientRect();
+                    var w = menu.offsetWidth, h = menu.offsetHeight;
+                    menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+                    menu.style.top = (r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+                    menu.querySelector('button').focus();
+                }
+
+                menu.addEventListener('keydown', function (e) {
+                    var buttons = [].slice.call(menu.querySelectorAll('button'));
+                    var i = buttons.indexOf(document.activeElement);
+                    if (e.key === 'ArrowDown') { e.preventDefault(); buttons[(i + 1) % buttons.length].focus(); }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); buttons[(i - 1 + buttons.length) % buttons.length].focus(); }
+                });
+                menu.addEventListener('toggle', function (e) {
+                    if (e.newState === 'closed' && menuOwner && menu.contains(document.activeElement)) { menuOwner.focus(); }
+                });
+                window.addEventListener('scroll', function () { if (menu.matches(':popover-open')) { menu.hidePopover(); } }, true);
+
+                // ---------- shared form pieces ----------
+                function expiryChips(container, dateInput, initial) {
+                    var current = { days: initial };
+                    function paint() {
+                        [].forEach.call(container.children, function (c, i) { c.setAttribute('aria-pressed', String(EXPIRY[i].days === current.days)); });
+                        dateInput.hidden = current.days !== 'custom';
+                    }
+                    container.textContent = '';
+                    EXPIRY.forEach(function (x) {
+                        container.appendChild(el('button', { type: 'button', class: 'sfChip', onclick: function () {
+                            current.days = x.days;
+                            paint();
+                            if (x.days === 'custom') { dateInput.focus(); }
+                        } }, [x.label]));
+                    });
+                    var min = new Date(Date.now() + 60000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                    dateInput.min = min;
+                    paint();
+                    return {
+                        // Returns { value } (ISO string or null) or { error }.
+                        read: function () {
+                            if (current.days === null) { return { value: null }; }
+                            if (current.days === 'custom') {
+                                if (!dateInput.value) { return { error: 'Choisissez une date d\'expiration.' }; }
+                                var d = new Date(dateInput.value);
+                                return d > new Date() ? { value: d.toISOString() } : { error: 'La date doit être dans le futur.' };
+                            }
+                            return { value: new Date(Date.now() + current.days * 86400000).toISOString() };
+                        }
+                    };
+                }
+
+                function passwordError(pwd) {
+                    return pwd.length < 6 ? 'Le mot de passe doit faire au moins 6 caractères.' : pwd.length > 256 ? 'Le mot de passe est trop long.' : '';
+                }
+
+                // ---------- create dialog ----------
+                function openCreate() {
+                    create = { step: 1, item: null, scopeId: null, link: null };
+                    $('#sfSearch').value = '';
+                    $('#sfResults').textContent = '';
+                    $('#sfScopeBox').hidden = true;
+                    $('#sfPwd').value = generatePassword();
+                    create.expiry = expiryChips($('#sfExpiry'), $('#sfExpiryDate'), 7);
+                    $('#sfExpiryDate').value = '';
+                    ['#sfErr1', '#sfErr2'].forEach(function (s) { $(s).textContent = ''; });
+                    showStep(1);
+                    openDialog($('#sfCreate'));
+                    $('#sfSearch').focus();
+                }
+
+                function showStep(n) {
+                    create.step = n;
+                    [].forEach.call(page.querySelectorAll('#sfCreate section[data-step]'), function (s) { s.hidden = s.getAttribute('data-step') !== String(n); });
+                    [].forEach.call(page.querySelectorAll('#sfCreate [data-step-label]'), function (li) {
+                        if (li.getAttribute('data-step-label') === String(n)) { li.setAttribute('aria-current', 'step'); } else { li.removeAttribute('aria-current'); }
+                    });
+                    $('#sfBack').hidden = n !== 2;
+                    $('#sfCopyLink').hidden = n !== 3;
+                    $('#sfNext').textContent = n === 1 ? 'Suivant' : n === 2 ? 'Créer le lien' : 'Copier le message';
                 }
 
                 function search() {
                     var term = $('#sfSearch').value.trim();
-                    var select = $('#sfResults');
-                    if (term.length < 2) {
-                        return;
-                    }
-
+                    var box = $('#sfResults');
+                    if (term.length < 2) { box.textContent = ''; return; }
                     ApiClient.getItems(ApiClient.getCurrentUserId(), {
-                        SearchTerm: term,
-                        IncludeItemTypes: 'Movie,Series,Episode',
-                        Recursive: true,
-                        Limit: 30
+                        SearchTerm: term, IncludeItemTypes: 'Movie,Series,Episode', Recursive: true, Limit: 20, Fields: 'ChildCount,ProductionYear', EnableImageTypes: 'Primary'
                     }).then(function (result) {
-                        select.innerHTML = '';
+                        box.textContent = '';
+                        if (!result.Items.length) { box.appendChild(el('p', { class: 'sfHint', text: 'Aucun résultat.' })); }
                         result.Items.forEach(function (i) {
-                            var label = i.Type === 'Episode'
-                                ? i.SeriesName + ' S' + (i.ParentIndexNumber || 0) + 'E' + (i.IndexNumber || 0) + ' - ' + i.Name
-                                : i.Name + (i.ProductionYear ? ' (' + i.ProductionYear + ')' : '') + (i.Type === 'Series' ? ' [série]' : '');
-                            option(select, i.Id + '|' + i.Type, label);
+                            var d = describe(i);
+                            box.appendChild(el('button', {
+                                type: 'button', class: 'sfResult', 'data-id': i.Id, 'aria-pressed': String(!!create.item && create.item.Id === i.Id),
+                                onclick: function () { pick(i); }
+                            }, [poster(i), el('span', null, [el('div', { class: 'sfTitle', text: d.title }), el('div', { class: 'sfSub', text: d.sub })])]));
                         });
-                        onResultChange();
-                    }, fail);
+                    }, function (err) { errorText(err).then(function (t) { $('#sfErr1').textContent = t; }); });
                 }
 
-                function onResultChange() {
-                    var parts = ($('#sfResults').value || '').split('|');
-                    var box = $('#sfSeasonBox');
-                    var seasons = $('#sfSeason');
-                    seasons.innerHTML = '';
-                    if (parts[1] !== 'Series') {
-                        box.style.display = 'none';
-                        return;
-                    }
-
-                    option(seasons, parts[0], 'Toute la série');
-                    ApiClient.getSeasons(parts[0], { userId: ApiClient.getCurrentUserId() }).then(function (result) {
-                        result.Items.forEach(function (s) { option(seasons, s.Id, s.Name); });
-                        box.style.display = '';
+                function pick(item) {
+                    create.item = item;
+                    create.scopeId = item.Id;
+                    create.scopeItem = item;
+                    $('#sfErr1').textContent = '';
+                    [].forEach.call($('#sfResults').querySelectorAll('.sfResult'), function (b) {
+                        b.setAttribute('aria-pressed', String(b.getAttribute('data-id') === item.Id));
+                    });
+                    var box = $('#sfScopeBox');
+                    var chips = $('#sfScope');
+                    chips.textContent = '';
+                    box.hidden = item.Type !== 'Series';
+                    if (item.Type !== 'Series') { return; }
+                    ApiClient.getSeasons(item.Id, { userId: ApiClient.getCurrentUserId(), Fields: 'ChildCount', EnableImageTypes: 'Primary' }).then(function (result) {
+                        var options = [{ id: item.Id, label: 'Toute la série', item: item }].concat(result.Items.map(function (s) { return { id: s.Id, label: s.Name, item: s }; }));
+                        options.forEach(function (o) {
+                            chips.appendChild(el('button', { type: 'button', class: 'sfChip', 'aria-pressed': String(o.id === create.scopeId), onclick: function () {
+                                create.scopeId = o.id;
+                                create.scopeItem = o.item;
+                                [].forEach.call(chips.children, function (c, i) { c.setAttribute('aria-pressed', String(options[i].id === o.id)); });
+                            } }, [o.label]));
+                        });
                     });
                 }
 
-                $('#sfSearch').addEventListener('input', function () {
-                    clearTimeout(searchTimer);
-                    searchTimer = setTimeout(search, 300);
-                });
-                $('#sfResults').addEventListener('change', onResultChange);
+                function buildMessage(link, pwd) {
+                    var s = create.scopeItem;
+                    var d = describe(s);
+                    var what = d.title + (s.Type === 'Season' ? ', ' + s.Name : s.Type === 'Episode' ? ', ' + d.sub : '');
+                    return 'Je te partage « ' + what + ' » : ' + linkUrl(link.Path) + '\n'
+                        + 'Mot de passe : ' + pwd + '\n'
+                        + (link.ExpiresUtc ? 'Lien valable jusqu\'au ' + longDate(link.ExpiresUtc) + '.' : 'Lien sans date d\'expiration.');
+                }
 
                 $('#sfCreateForm').addEventListener('submit', function (e) {
                     e.preventDefault();
-                    var parts = ($('#sfResults').value || '').split('|');
-                    var itemId = parts[1] === 'Series' ? $('#sfSeason').value : parts[0];
-                    if (!itemId) {
-                        Dashboard.alert('Choisissez un élément.');
-                        return false;
+                    if (create.step === 1) {
+                        if (!create.item) { $('#sfErr1').textContent = 'Choisissez un élément dans les résultats.'; $('#sfSearch').focus(); return; }
+                        var picked = $('#sfPicked');
+                        var d = describe(create.scopeItem);
+                        picked.textContent = '';
+                        picked.appendChild(poster(create.scopeItem));
+                        picked.appendChild(el('div', null, [el('div', { class: 'sfTitle', text: d.title }), el('div', { class: 'sfSub', text: d.sub })]));
+                        showStep(2);
+                        $('#sfPwd').focus();
+                        $('#sfPwd').select();
+                        return;
                     }
-
-                    var expires = $('#sfExpires').value;
-                    Dashboard.showLoadingMsg();
-                    api('POST', 'Sharefin/links', {
-                        ItemId: itemId,
-                        Password: $('#sfPassword').value,
-                        ExpiresUtc: expires ? new Date(expires).toISOString() : null
-                    }).then(function (resp) {
-                        return resp.json ? resp.json() : resp;
-                    }).then(function (link) {
-                        Dashboard.hideLoadingMsg();
-                        $('#sfPassword').value = '';
-                        $('#sfCreated').style.display = '';
-                        $('#sfCreatedUrl').value = publicUrl(link.Path);
-                        return loadLinks();
-                    }, fail);
-                    return false;
+                    if (create.step === 2) {
+                        var pwd = $('#sfPwd').value;
+                        var err = passwordError(pwd);
+                        var exp = create.expiry.read();
+                        $('#sfErr2').textContent = err || exp.error || '';
+                        if (err || exp.error) { return; }
+                        var next = $('#sfNext');
+                        next.disabled = true;
+                        api('POST', 'Sharefin/links', { ItemId: create.scopeId, Password: pwd, ExpiresUtc: exp.value }).then(asJson).then(function (link) {
+                            next.disabled = false;
+                            create.link = link;
+                            $('#sfMessage').value = buildMessage(link, pwd);
+                            showStep(3);
+                            $('#sfNext').focus();
+                            state.filter = 'active';
+                            loadLinks();
+                        }, function (er) {
+                            next.disabled = false;
+                            errorText(er).then(function (t) { $('#sfErr2').textContent = t; });
+                        });
+                        return;
+                    }
+                    copy($('#sfMessage').value, 'Message copié');
                 });
+
+                $('#sfBack').addEventListener('click', function () { showStep(1); $('#sfSearch').focus(); });
+                $('#sfCopyLink').addEventListener('click', function () { copy(linkUrl(create.link.Path), 'Lien copié'); });
+                $('#sfGen').addEventListener('click', function () { $('#sfPwd').value = generatePassword(); $('#sfPwd').focus(); });
+                $('#sfSearch').addEventListener('input', function () { clearTimeout(searchTimer); searchTimer = setTimeout(search, 300); });
+                $('#sfNew').addEventListener('click', openCreate);
+
+                // ---------- edit dialogs ----------
+                var edit = { submit: null };
+
+                function openEdit(title, okLabel, body, onSubmit, danger) {
+                    $('#sfEditTitle').textContent = title;
+                    var ok = $('#sfEditOk');
+                    ok.textContent = okLabel;
+                    ok.className = 'raised emby-button ' + (danger ? 'sfDanger' : 'button-submit');
+                    var b = $('#sfEditBody');
+                    b.textContent = '';
+                    body.forEach(function (n) { b.appendChild(n); });
+                    b.appendChild(el('p', { class: 'sfError', role: 'alert', id: 'sfEditErr' }));
+                    edit.submit = onSubmit;
+                    openDialog($('#sfEdit'));
+                    var first = b.querySelector('input');
+                    (first || ok).focus();
+                }
+
+                function editFailed(err) {
+                    $('#sfEditOk').disabled = false;
+                    errorText(err).then(function (t) { $('#sfEditErr').textContent = t; });
+                }
+
+                $('#sfEditForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    if (edit.submit) { edit.submit(); }
+                });
+
+                function done(message) {
+                    $('#sfEditOk').disabled = false;
+                    $('#sfEdit').close();
+                    toast(message);
+                    // The row that opened the dialog is redrawn, so put keyboard focus back on the list filters.
+                    loadLinks().then(function () { $('#sfFilters [aria-pressed="true"]').focus(); });
+                }
+
+                function itemLine(d) { return el('p', { style: 'margin-top:0' }, [el('strong', { text: d.title }), ' · ' + d.sub]); }
+
+                function editPassword(l, d) {
+                    var input = el('input', { id: 'sfNewPwd', class: 'emby-input sfMono', type: 'text', minlength: '6', maxlength: '256', autocomplete: 'off', spellcheck: 'false' });
+                    input.value = generatePassword();
+                    openEdit('Changer le mot de passe', 'Enregistrer', [
+                        itemLine(d),
+                        el('label', { class: 'sfLabel', for: 'sfNewPwd', text: 'Nouveau mot de passe' }),
+                        el('div', { class: 'sfRow2' }, [
+                            input,
+                            el('button', { type: 'button', class: 'sfIconBtn', 'aria-label': 'Générer un autre mot de passe', title: 'Générer', onclick: function () { input.value = generatePassword(); input.focus(); } }, [icon('refresh')]),
+                            el('button', { type: 'button', class: 'sfIconBtn', 'aria-label': 'Copier le mot de passe', title: 'Copier', onclick: function () { copy(input.value, 'Mot de passe copié'); } }, [icon('content_copy')])
+                        ]),
+                        el('p', { class: 'sfHint', text: 'Les personnes qui ont déjà le lien devront saisir le nouveau mot de passe.' })
+                    ], function () {
+                        var err = passwordError(input.value);
+                        if (err) { $('#sfEditErr').textContent = err; input.focus(); return; }
+                        $('#sfEditOk').disabled = true;
+                        api('POST', 'Sharefin/links/' + l.Id + '/password', { Password: input.value }).then(function () { done('Mot de passe changé'); }, editFailed);
+                    });
+                    input.select();
+                }
+
+                function editExpiry(l, d) {
+                    var chips = el('div', { class: 'sfChips', role: 'group', 'aria-label': 'Nouvelle expiration' });
+                    var date = el('input', { class: 'emby-input', type: 'datetime-local', 'aria-label': 'Date d\'expiration', style: 'margin-top:.6em' });
+                    var picker = expiryChips(chips, date, 7);
+                    openEdit('Modifier l\'expiration', 'Enregistrer', [
+                        itemLine(d),
+                        el('p', { class: 'sfHint', text: 'Actuellement : ' + (l.ExpiresUtc ? (l.Status === 'Expired' ? 'expiré le ' : 'expire le ') + longDate(l.ExpiresUtc) : 'permanent') + '.' }),
+                        el('div', { class: 'sfLabel', text: 'Nouvelle expiration, à partir de maintenant' }),
+                        chips, date
+                    ], function () {
+                        var exp = picker.read();
+                        if (exp.error) { $('#sfEditErr').textContent = exp.error; return; }
+                        $('#sfEditOk').disabled = true;
+                        api('POST', 'Sharefin/links/' + l.Id + '/expiry', { ExpiresUtc: exp.value }).then(function () { done('Expiration modifiée'); }, editFailed);
+                    });
+                }
+
+                function confirmAction(l, d, kind) {
+                    var revoke = kind === 'revoke';
+                    openEdit(revoke ? 'Révoquer ce lien ?' : 'Supprimer ce lien ?', revoke ? 'Révoquer' : 'Supprimer', [
+                        itemLine(d),
+                        el('p', { text: revoke
+                            ? 'Le lien cessera de fonctionner immédiatement, y compris pour les lectures en cours. Il restera visible dans la liste des liens révoqués.'
+                            : 'Le lien et son historique seront définitivement effacés. Cette action est irréversible.' })
+                    ], function () {
+                        $('#sfEditOk').disabled = true;
+                        (revoke ? api('POST', 'Sharefin/links/' + l.Id + '/revoke') : api('DELETE', 'Sharefin/links/' + l.Id))
+                            .then(function () { done(revoke ? 'Lien révoqué' : 'Lien supprimé'); }, editFailed);
+                    }, true);
+                }
+
+                // ---------- settings ----------
+                function renderLocalWarning() {
+                    var host = '';
+                    try { host = new URL(ApiClient.serverAddress()).hostname; } catch (e) { host = ''; }
+                    var local = !state.config.PublicBaseUrl && isLocalHost(host);
+                    $('#sfLocalWarn').hidden = !local;
+                    $('#sfLocalHost').textContent = host;
+                    var hint = $('#sfPublicHint');
+                    hint.className = 'sfHint' + (local ? ' sfWarnText' : '');
+                    hint.textContent = local
+                        ? 'Vous êtes sur une adresse locale (' + host + ') : renseignez l\'adresse publique, URL de base comprise.'
+                        : 'Adresse de Jellyfin vue depuis Internet, URL de base comprise. Vide : l\'adresse du tableau de bord.';
+                }
+
+                $('#sfOpenSettings').addEventListener('click', function () {
+                    $('#sfSettings').open = true;
+                    $('#sfPublicUrl').focus();
+                    $('#sfSettings').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+
+                function readInt(sel, min, max) {
+                    var v = Number($(sel).value);
+                    return Number.isInteger(v) && v >= min && v <= max ? v : null;
+                }
 
                 $('#sfSettingsForm').addEventListener('submit', function (e) {
                     e.preventDefault();
-                    Dashboard.showLoadingMsg();
+                    var err = $('#sfSettingsError');
+                    var url = $('#sfPublicUrl').value.trim().replace(/\/+$/, '');
+                    if (url) {
+                        var parsed = null;
+                        try { parsed = new URL(url); } catch (x) { parsed = null; }
+                        if (!parsed || !/^https?:$/.test(parsed.protocol) || parsed.search || parsed.hash) {
+                            err.textContent = 'Adresse invalide : attendu https://domaine ou https://domaine/chemin.';
+                            $('#sfPublicUrl').focus();
+                            return;
+                        }
+                    }
+                    var days = readInt('#sfRememberDays', 1, 3650), perLink = readInt('#sfMaxLink', 1, 100), perIp = readInt('#sfMaxIp', 1, 1000);
+                    if (days === null || perLink === null || perIp === null) {
+                        err.textContent = 'Vérifiez les nombres : mémorisation 1 à 3650 jours, échecs 1 à 100 par lien et 1 à 1000 par IP.';
+                        return;
+                    }
+                    err.textContent = '';
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                        config.RememberDays = parseInt($('#sfRememberDays').value, 10) || 30;
-                        config.MaxFailuresPerLink = parseInt($('#sfMaxLink').value, 10) || 5;
-                        config.MaxFailuresPerIp = parseInt($('#sfMaxIp').value, 10) || 20;
-                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
-                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        config.PublicBaseUrl = url;
+                        config.RememberDays = days;
+                        config.MaxFailuresPerLink = perLink;
+                        config.MaxFailuresPerIp = perIp;
+                        return ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
+                            state.config = config;
+                            $('#sfPublicUrl').value = url;
+                            renderLocalWarning();
+                            toast('Réglages enregistrés');
                         });
-                    });
-                    return false;
+                    }).catch(function (x) { errorText(x).then(function (t) { err.textContent = t; }); });
                 });
 
+                $('#sfQuery').addEventListener('input', function () { state.query = $('#sfQuery').value; render(); });
+
                 page.addEventListener('pageshow', function () {
+                    var probe = el('button', { class: 'raised button-submit emby-button', style: 'position:absolute;visibility:hidden' });
+                    page.appendChild(probe);
+                    page.style.setProperty('--sf-accent', getComputedStyle(probe).backgroundColor);
+                    probe.remove();
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        state.config = config;
+                        $('#sfPublicUrl').value = config.PublicBaseUrl || '';
                         $('#sfRememberDays').value = config.RememberDays;
                         $('#sfMaxLink').value = config.MaxFailuresPerLink;
                         $('#sfMaxIp').value = config.MaxFailuresPerIp;
+                        renderLocalWarning();
                         return loadLinks();
-                    }).then(function () { Dashboard.hideLoadingMsg(); });
+                    }).then(function () { Dashboard.hideLoadingMsg(); }, function () { Dashboard.hideLoadingMsg(); });
                 });
             })();
         </script>
