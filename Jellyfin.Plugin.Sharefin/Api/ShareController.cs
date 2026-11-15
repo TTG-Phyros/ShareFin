@@ -494,7 +494,7 @@ public class ShareController : ControllerBase
         Response.Cookies.Append(ShareCookie.CookieName(link.Token), _cookie.Issue(link, expires, now), new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = Request.IsHttps, // browsers drop Secure cookies set over plain http, which made login loop
             SameSite = SameSiteMode.Lax,
             IsEssential = true,
             Path = Request.PathBase + "/Sharefin/s/" + link.Token,
