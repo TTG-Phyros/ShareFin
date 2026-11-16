@@ -366,36 +366,38 @@ public class ShareController : ControllerBase
     }
 
     /// <summary>
-    /// Gets an item's primary image, resized.
+    /// Gets an item's primary, backdrop or logo image, resized. Backdrops and logos
+    /// fall back to the parent series' for a season or episode.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The item.</param>
     /// <param name="maxWidth">Maximum width in pixels.</param>
+    /// <param name="type">Primary, Backdrop or Logo.</param>
     /// <returns>The image.</returns>
     [HttpGet("items/{itemId}/image")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult> Image([FromRoute] string token, [FromRoute] Guid itemId, [FromQuery] int maxWidth = 400)
+    public async Task<ActionResult> Image([FromRoute] string token, [FromRoute] Guid itemId, [FromQuery] int maxWidth = 400, [FromQuery] ImageType type = ImageType.Primary)
     {
         if (!TryAuthorize(token, itemId, out var access, out var error))
         {
             return error;
         }
 
-        var item = access.Item;
-        var info = item.GetImageInfo(ImageType.Primary, 0) ?? item.GetImageInfo(ImageType.Thumb, 0);
-        if (info is null || !info.IsLocalFile)
+        var found = FindImage(access.Item, type);
+        if (found is null || !found.Value.Info.IsLocalFile)
         {
             return NotFound();
         }
 
+        var (item, info) = found.Value;
         var (path, mime, _) = await _imageProcessor.ProcessImage(new ImageProcessingOptions
         {
             Item = item,
             ItemId = item.Id,
             Image = info,
-            MaxWidth = Math.Clamp(maxWidth, 64, 1280),
+            MaxWidth = Math.Clamp(maxWidth, 64, 1920),
             Quality = 90,
             SupportedOutputFormats = [ImageFormat.Webp, ImageFormat.Jpg],
         }).ConfigureAwait(false);
@@ -410,17 +412,52 @@ public class ShareController : ControllerBase
         _ => null,
     };
 
+    /// <summary>
+    /// The item's image of the given type; a season or episode borrows its series' backdrop and logo.
+    /// </summary>
+    private static (BaseItem Item, ItemImageInfo Info)? FindImage(BaseItem item, ImageType type)
+    {
+        if (type == ImageType.Primary)
+        {
+            var info = item.GetImageInfo(ImageType.Primary, 0) ?? item.GetImageInfo(ImageType.Thumb, 0);
+            return info is null ? null : (item, info);
+        }
+
+        if (type is not (ImageType.Backdrop or ImageType.Logo))
+        {
+            return null;
+        }
+
+        BaseItem? series = item switch { Episode e => e.Series, Season s => s.Series, _ => null };
+        foreach (var candidate in new[] { item, series })
+        {
+            if (candidate?.GetImageInfo(type, 0) is { } info)
+            {
+                return (candidate, info);
+            }
+        }
+
+        return null;
+    }
+
     private static object ItemDto(BaseItem item) => new
     {
         Id = item.Id.ToString("N"),
         item.Name,
         Type = item.GetBaseItemKind().ToString(),
         item.Overview,
+        item.Tagline,
+        item.Genres,
+        item.OfficialRating,
+        item.CommunityRating,
+        SeriesName = item is Episode ep ? ep.SeriesName : null,
         Year = item.ProductionYear,
         Season = item is Episode e ? e.ParentIndexNumber : null,
         Episode = item is Episode ? item.IndexNumber : null,
         RuntimeMinutes = item.RunTimeTicks is { } ticks ? (int?)(ticks / TimeSpan.TicksPerMinute) : null,
         HasImage = item.HasImage(ImageType.Primary) || item.HasImage(ImageType.Thumb),
+        HasBackdrop = FindImage(item, ImageType.Backdrop) is not null,
+        HasLogo = FindImage(item, ImageType.Logo) is not null,
         Playable = item is Video,
     };
 
