@@ -60,6 +60,8 @@ Autres réglages :
 
 Le destinataire ouvre `https://votre-domaine/Sharefin/s/<token>`, saisit le mot de passe, parcourt les saisons et épisodes, puis regarde la vidéo dans son navigateur. La page reprend l'image de fond, le logo et les métadonnées de Jellyfin ; le lecteur plein écran gère l'audio, les sous-titres, l'épisode suivant, les raccourcis clavier (espace, ←/→, F, M) et reprend là où le destinataire s'était arrêté (position mémorisée dans son navigateur).
 
+Si un **CSS personnalisé** est défini dans Jellyfin (**Tableau de bord → Général**), par exemple le thème [ElegantFin](https://github.com/lscambo13/ElegantFin), la page de partage le charge aussi : elle reprend sa couleur d'accent, ses fonds, ses textes, ses bordures et sa police. Les règles du thème ciblent l'interface de Jellyfin et ne modifient pas la mise en page du partage ; seules ses variables (au nommage d'ElegantFin) sont utilisées.
+
 ## Exposition publique
 
 - **HTTPS obligatoire.** Le cookie de mémorisation est `Secure` : sur une URL en HTTP, le navigateur le refuse (sauf sur `localhost`). Le destinataire peut alors saisir le mot de passe, mais l'accès au contenu échouera.
@@ -78,7 +80,7 @@ Le destinataire ouvre `https://votre-domaine/Sharefin/s/<token>`, saisit le mot 
 | Cookie | Un par lien, `HttpOnly`, `Secure`, `SameSite=Lax`, chemin limité à `/Sharefin/s/<token>`. Contenu chiffré et signé (ASP.NET Data Protection) : id du lien, empreinte de version, date d'émission, expiration |
 | Invalidation | L'empreinte change à chaque changement de mot de passe ou révocation : tous les cookies existants deviennent invalides |
 | Vérifications | À **chaque** requête, médias compris : lien existant, non expiré, non révoqué, cookie valide pour l'empreinte courante, élément demandé égal à l'élément partagé ou à l'un de ses descendants (sinon `404`) |
-| Fuites | Aucun chemin de fichier, aucune clé API, aucun token Jellyfin envoyés au navigateur ; la page a une CSP stricte (script avec nonce) |
+| Fuites | Aucun chemin de fichier, aucune clé API, aucun token Jellyfin envoyés au navigateur ; la page a une CSP stricte (script avec nonce ; styles, polices et images en HTTPS externes autorisés seulement si un CSS personnalisé est défini) |
 | Admin | Endpoints `/Sharefin/links` protégés par la policy administrateur de Jellyfin (`RequiresElevation`) |
 
 Données du plugin, dans le dossier `data` de Jellyfin :

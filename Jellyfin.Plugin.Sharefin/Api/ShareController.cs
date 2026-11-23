@@ -12,12 +12,14 @@ using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Model.Branding;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -57,6 +59,7 @@ public class ShareController : ControllerBase
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IImageProcessor _imageProcessor;
     private readonly ISubtitleEncoder _subtitleEncoder;
+    private readonly IServerConfigurationManager _configurationManager;
     private readonly ILogger<ShareController> _logger;
 
     /// <summary>
@@ -70,6 +73,7 @@ public class ShareController : ControllerBase
     /// <param name="mediaSourceManager">The media source manager.</param>
     /// <param name="imageProcessor">The image processor.</param>
     /// <param name="subtitleEncoder">The subtitle encoder.</param>
+    /// <param name="configurationManager">The server configuration, for the custom CSS theme.</param>
     /// <param name="logger">The logger.</param>
     public ShareController(
         ShareLinkStore store,
@@ -80,6 +84,7 @@ public class ShareController : ControllerBase
         IMediaSourceManager mediaSourceManager,
         IImageProcessor imageProcessor,
         ISubtitleEncoder subtitleEncoder,
+        IServerConfigurationManager configurationManager,
         ILogger<ShareController> logger)
     {
         _store = store;
@@ -90,6 +95,7 @@ public class ShareController : ControllerBase
         _mediaSourceManager = mediaSourceManager;
         _imageProcessor = imageProcessor;
         _subtitleEncoder = subtitleEncoder;
+        _configurationManager = configurationManager;
         _logger = logger;
     }
 
@@ -121,9 +127,16 @@ public class ShareController : ControllerBase
         }
 
         var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        // Jellyfin's custom CSS (Dashboard → General), e.g. an ElegantFin @import: the page reuses its variables and font.
+        var themed = !string.IsNullOrWhiteSpace((_configurationManager.GetConfiguration("branding") as BrandingOptions)?.CustomCss);
+        var external = themed ? " 'self' https:" : string.Empty; // the theme's own @imports, fonts and images
         Response.Headers["Content-Security-Policy"] =
-            $"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
-        return Content(PageTemplate.Value.Replace("{{nonce}}", nonce, StringComparison.Ordinal), "text/html; charset=utf-8");
+            $"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'{external}; font-src 'self' data:{external}; img-src 'self' data:{external}; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+        var theme = themed ? $"<style>@import url(\"{Request.PathBase.ToUriComponent()}/Branding/Css.css\") layer(theme);</style>" : string.Empty;
+        var page = PageTemplate.Value
+            .Replace("{{nonce}}", nonce, StringComparison.Ordinal)
+            .Replace("{{theme}}", theme, StringComparison.Ordinal);
+        return Content(page, "text/html; charset=utf-8");
     }
 
     /// <summary>
