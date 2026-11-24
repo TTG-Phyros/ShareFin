@@ -285,7 +285,8 @@
                 function legacyCopy(text) {
                     var ta = el('textarea', { style: 'position:fixed;opacity:0', 'aria-hidden': 'true' });
                     ta.value = text;
-                    page.appendChild(ta);
+                    // An open modal makes the rest of the page inert, so the textarea must live inside it to be selectable.
+                    (page.querySelector('dialog[open]') || page).appendChild(ta);
                     ta.select();
                     var ok = false;
                     try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
