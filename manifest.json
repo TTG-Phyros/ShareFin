@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.3.1.0",
+        "changelog": "- Corrige la copie du lien depuis la fenêtre de création servie en http",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TTG-Phyros/ShareFin/releases/download/v1.3.1/sharefin_1.3.1.0.zip",
+        "checksum": "9159611eaef446457c2f7653c12d4672",
+        "timestamp": "2026-11-24T10:52:40Z"
+      },
+      {
         "version": "1.3.0.0",
         "changelog": "- Applique le thème CSS personnalisé de Jellyfin à la page de partage",
         "targetAbi": "12.0.0.0",
