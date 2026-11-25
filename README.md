@@ -49,7 +49,7 @@ La page est aussi accessible depuis la section **Extensions** du menu latéral d
 
 1. **Choisir** : rechercher un film, une série ou un épisode ; pour une série, partager toute la série ou une seule saison.
 2. **Protéger** : un mot de passe facile à dicter est proposé (trois mots et un nombre, régénérable ou modifiable, 6 caractères minimum), puis l'expiration : 24 h, 7 jours (par défaut), 30 jours, jamais ou une date précise.
-3. **Partager** : un message prêt à envoyer, modifiable, contient le lien, le mot de passe et la date de fin. Copiez-le en entier, ou seulement le lien si vous envoyez le mot de passe par un autre canal.
+3. **Partager** : un message prêt à envoyer, modifiable, contient le lien, le mot de passe et la date de fin. Copiez-le en entier, ou seulement le lien si vous envoyez le mot de passe par un autre canal. Un QR code du lien (sans le mot de passe) permet aussi de l'ouvrir directement sur un téléphone.
 
 La liste se filtre par statut (actifs, expirent dans les 3 jours, expirés, révoqués, tous) et par titre. Chaque lien affiche son affiche, son contenu (« Saison 2 · 8 épisodes »), son expiration, son nombre d'accès (une ouverture par session de navigateur, les rechargements de page ne comptent pas) et sa dernière ouverture. Le bouton de copie est toujours visible ; le menu ⋮ propose **Changer le mot de passe**, **Modifier l'expiration**, **Révoquer** et **Supprimer**, ces deux dernières actions avec confirmation. Changer le mot de passe ou révoquer un lien invalide immédiatement tous les mots de passe mémorisés par les destinataires. Prolonger une expiration est possible, mais ceux dont le mot de passe était mémorisé devront le ressaisir à l'ancienne échéance.
 
@@ -118,7 +118,11 @@ dotnet build Jellyfin.Plugin.Sharefin.slnx
 dotnet test --solution Jellyfin.Plugin.Sharefin.slnx
 ```
 
-Les tests (xUnit v3) couvrent la validation du mot de passe, l'expiration et la révocation, l'invalidation du cookie après changement de mot de passe, le confinement série/saison/épisode, la limitation des tentatives et la persistance.
+```bash
+node Jellyfin.Plugin.Sharefin.Tests/qr.test.js Jellyfin.Plugin.Sharefin/Configuration/configPage.html
+```
+
+Ce second test vérifie le générateur de QR code de la page d'administration (vecteurs connus, puis décodage complet des versions 1 à 10). Les tests xUnit v3 couvrent la validation du mot de passe, l'expiration et la révocation, l'invalidation du cookie après changement de mot de passe, le confinement série/saison/épisode, la limitation des tentatives et la persistance.
 
 ### Intégration continue et publication
 

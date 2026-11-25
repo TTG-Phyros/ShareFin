@@ -24,6 +24,9 @@ jobs:
       - name: Test
         run: dotnet test --solution Jellyfin.Plugin.Sharefin.slnx -c Release --no-build
 
+      - name: Test QR code encoder
+        run: node Jellyfin.Plugin.Sharefin.Tests/qr.test.js Jellyfin.Plugin.Sharefin/Configuration/configPage.html
+
       - uses: actions/upload-artifact@v7
         with:
           name: Jellyfin.Plugin.Sharefin

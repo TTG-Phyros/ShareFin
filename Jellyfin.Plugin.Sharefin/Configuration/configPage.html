@@ -80,6 +80,9 @@
             .sfMono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
             .sfMessage { min-height: 9em; resize: vertical; font: inherit; line-height: 1.5; }
             .sfFieldWide { grid-column: 1 / -1; max-width: 36em; }
+            .sfQrBox { display: flex; gap: 1em; align-items: center; margin-top: 1em; }
+            .sfQrBox svg { width: 8.5em; height: 8.5em; flex: none; display: block; border-radius: .3em; }
+            .sfQrBox .sfHint { margin: 0; }
             .sfToast { position: fixed; left: 50%; bottom: 1.5em; transform: translateX(-50%); padding: .7em 1.2em; border-radius: .3em; background: #303030; color: #fff; z-index: 1000; max-width: calc(100vw - 2em); }
             @media (max-width: 760px) {
                 .sfRow { grid-template-columns: 3em minmax(0, 1fr) auto; grid-template-areas: "poster main actions" "poster state actions"; }
@@ -192,6 +195,10 @@
                         <label class="sfLabel" for="sfMessage" hidden>Message</label>
                         <textarea id="sfMessage" class="emby-input sfMessage"></textarea>
                         <p class="sfHint">Pour plus de sécurité, envoyez le mot de passe par un autre canal que le lien.</p>
+                        <div id="sfQrBox" class="sfQrBox" hidden>
+                            <div id="sfQr"></div>
+                            <p class="sfHint">Ce QR code ouvre le lien, sans le mot de passe : pratique pour l'ouvrir sur un téléphone ou une tablette.</p>
+                        </div>
                     </section>
                 </div>
                 <div class="sfDlgFoot">
@@ -384,6 +391,242 @@
                         if (e.target === d || e.target.closest('[data-close]')) { d.close(); }
                     });
                 });
+
+                // ---------- QR code ----------
+                // shortcut: byte mode, error correction M, versions 1 to 10 (up to 213 bytes): a longer link gets no QR code.
+                var QR_ECC = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26]; // error correction codewords per block, by version
+                var QR_BLOCKS = [0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+
+                function qrRawCodewords(v) {
+                    var n = (16 * v + 128) * v + 64;
+                    if (v >= 2) {
+                        var a = Math.floor(v / 7) + 2;
+                        n -= (25 * a - 10) * a - 55;
+                        if (v >= 7) { n -= 36; }
+                    }
+                    return Math.floor(n / 8);
+                }
+
+                function qrDataCodewords(v) { return qrRawCodewords(v) - QR_ECC[v] * QR_BLOCKS[v]; }
+
+                function gfMul(x, y) {
+                    var z = 0;
+                    for (var i = 7; i >= 0; i--) {
+                        z = (z << 1) ^ ((z >>> 7) * 0x11D);
+                        z ^= ((y >>> i) & 1) * x;
+                    }
+                    return z;
+                }
+
+                function rsDivisor(degree) {
+                    var r = [];
+                    for (var i = 0; i < degree - 1; i++) { r.push(0); }
+                    r.push(1);
+                    var root = 1;
+                    for (var k = 0; k < degree; k++) {
+                        for (var j = 0; j < r.length; j++) {
+                            r[j] = gfMul(r[j], root);
+                            if (j + 1 < r.length) { r[j] ^= r[j + 1]; }
+                        }
+                        root = gfMul(root, 2);
+                    }
+                    return r;
+                }
+
+                function rsRemainder(data, divisor) {
+                    var r = divisor.map(function () { return 0; });
+                    data.forEach(function (b) {
+                        var factor = b ^ r.shift();
+                        r.push(0);
+                        divisor.forEach(function (c, i) { r[i] ^= gfMul(c, factor); });
+                    });
+                    return r;
+                }
+
+                // 15 format bits for level M (code 00) and a mask, BCH-protected and XOR-masked.
+                function qrFormatBits(mask) {
+                    var rem = mask;
+                    for (var i = 0; i < 10; i++) { rem = (rem << 1) ^ ((rem >>> 9) * 0x537); }
+                    return (mask << 10 | rem) ^ 0x5412;
+                }
+
+                function qrVersionBits(v) {
+                    var rem = v;
+                    for (var i = 0; i < 12; i++) { rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25); }
+                    return v << 12 | rem;
+                }
+
+                // Returns the module grid (true = dark) for a text, or null when it does not fit in version 10.
+                function qrCode(text) {
+                    var bytes = Array.from(new TextEncoder().encode(text));
+                    var v = 1;
+                    while (v <= 10 && 4 + (v < 10 ? 8 : 16) + bytes.length * 8 > qrDataCodewords(v) * 8) { v++; }
+                    if (v > 10) { return null; }
+
+                    // Data: byte mode, length, bytes, terminator, then padding.
+                    var bits = [];
+                    var push = function (val, len) { for (var i = len - 1; i >= 0; i--) { bits.push((val >>> i) & 1); } };
+                    push(4, 4);
+                    push(bytes.length, v < 10 ? 8 : 16);
+                    bytes.forEach(function (b) { push(b, 8); });
+                    var capacity = qrDataCodewords(v) * 8;
+                    push(0, Math.min(4, capacity - bits.length));
+                    push(0, (8 - bits.length % 8) % 8);
+                    var data = [];
+                    for (var i = 0; i < bits.length; i += 8) { data.push(parseInt(bits.slice(i, i + 8).join(''), 2)); }
+                    for (var pad = 0xEC; data.length < qrDataCodewords(v); pad ^= 0xEC ^ 0x11) { data.push(pad); }
+
+                    // Error correction per block, then interleave.
+                    var numBlocks = QR_BLOCKS[v], eccLen = QR_ECC[v], raw = qrRawCodewords(v);
+                    var shortBlocks = numBlocks - raw % numBlocks, shortLen = Math.floor(raw / numBlocks);
+                    var divisor = rsDivisor(eccLen), blocks = [], k = 0;
+                    for (var b = 0; b < numBlocks; b++) {
+                        var dat = data.slice(k, k + shortLen - eccLen + (b < shortBlocks ? 0 : 1));
+                        k += dat.length;
+                        var ecc = rsRemainder(dat, divisor);
+                        if (b < shortBlocks) { dat.push(0); }
+                        blocks.push(dat.concat(ecc));
+                    }
+                    var codewords = [];
+                    for (var c = 0; c < blocks[0].length; c++) {
+                        for (var j = 0; j < blocks.length; j++) {
+                            if (c !== shortLen - eccLen || j >= shortBlocks) { codewords.push(blocks[j][c]); }
+                        }
+                    }
+
+                    // Function patterns.
+                    var size = v * 4 + 17, grid = [], fixed = [];
+                    for (var y0 = 0; y0 < size; y0++) { grid.push(new Array(size).fill(false)); fixed.push(new Array(size).fill(false)); }
+                    var set = function (x, y, dark) { grid[y][x] = dark; fixed[y][x] = true; };
+                    for (var t = 0; t < size; t++) { set(6, t, t % 2 === 0); set(t, 6, t % 2 === 0); }
+                    [[3, 3], [size - 4, 3], [3, size - 4]].forEach(function (f) {
+                        for (var dy = -4; dy <= 4; dy++) {
+                            for (var dx = -4; dx <= 4; dx++) {
+                                var d = Math.max(Math.abs(dx), Math.abs(dy)), x = f[0] + dx, y = f[1] + dy;
+                                if (x >= 0 && x < size && y >= 0 && y < size) { set(x, y, d !== 2 && d !== 4); }
+                            }
+                        }
+                    });
+                    var align = [];
+                    if (v > 1) {
+                        var n = Math.floor(v / 7) + 2, step = Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2;
+                        align = [6];
+                        for (var p = size - 7; align.length < n; p -= step) { align.splice(1, 0, p); }
+                    }
+                    align.forEach(function (ay, i) {
+                        align.forEach(function (ax, j) {
+                            if ((i === 0 && j === 0) || (i === 0 && j === align.length - 1) || (i === align.length - 1 && j === 0)) { return; }
+                            for (var dy = -2; dy <= 2; dy++) {
+                                for (var dx = -2; dx <= 2; dx++) { set(ax + dx, ay + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1); }
+                            }
+                        });
+                    });
+                    var drawFormat = function (mask) {
+                        var f = qrFormatBits(mask), bit = function (i) { return ((f >>> i) & 1) === 1; };
+                        for (var i = 0; i <= 5; i++) { set(8, i, bit(i)); }
+                        set(8, 7, bit(6));
+                        set(8, 8, bit(7));
+                        set(7, 8, bit(8));
+                        for (i = 9; i < 15; i++) { set(14 - i, 8, bit(i)); }
+                        for (i = 0; i < 8; i++) { set(size - 1 - i, 8, bit(i)); }
+                        for (i = 8; i < 15; i++) { set(8, size - 15 + i, bit(i)); }
+                        set(8, size - 8, true);
+                    };
+                    drawFormat(0);
+                    if (v >= 7) {
+                        var vb = qrVersionBits(v);
+                        for (var q = 0; q < 18; q++) {
+                            var on = ((vb >>> q) & 1) === 1, a1 = size - 11 + q % 3, a2 = Math.floor(q / 3);
+                            set(a1, a2, on);
+                            set(a2, a1, on);
+                        }
+                    }
+
+                    // Codewords, in the zigzag order.
+                    var bit = 0;
+                    for (var right = size - 1; right >= 1; right -= 2) {
+                        if (right === 6) { right = 5; }
+                        for (var vert = 0; vert < size; vert++) {
+                            for (var h = 0; h < 2; h++) {
+                                var x = right - h, y = ((right + 1) & 2) === 0 ? size - 1 - vert : vert;
+                                if (!fixed[y][x] && bit < codewords.length * 8) {
+                                    grid[y][x] = ((codewords[bit >>> 3] >>> (7 - (bit & 7))) & 1) === 1;
+                                    bit++;
+                                }
+                            }
+                        }
+                    }
+
+                    // Mask: keep the one with the lowest penalty.
+                    var applyMask = function (m) {
+                        for (var y = 0; y < size; y++) {
+                            for (var x = 0; x < size; x++) {
+                                var flip = [(x + y) % 2, y % 2, x % 3, (x + y) % 3, (Math.floor(x / 3) + Math.floor(y / 2)) % 2,
+                                    x * y % 2 + x * y % 3, (x * y % 2 + x * y % 3) % 2, ((x + y) % 2 + x * y % 3) % 2][m] === 0;
+                                if (!fixed[y][x] && flip) { grid[y][x] = !grid[y][x]; }
+                            }
+                        }
+                    };
+                    var best = 0, bestScore = Infinity;
+                    for (var m = 0; m < 8; m++) {
+                        applyMask(m);
+                        drawFormat(m);
+                        var score = qrPenalty(grid);
+                        if (score < bestScore) { best = m; bestScore = score; }
+                        applyMask(m);
+                    }
+                    applyMask(best);
+                    drawFormat(best);
+                    return grid;
+                }
+
+                // Standard penalty rules: long runs, 2x2 blocks, finder-like patterns, dark/light balance.
+                function qrPenalty(grid) {
+                    var size = grid.length, score = 0, dark = 0;
+                    var lines = [];
+                    for (var i = 0; i < size; i++) {
+                        lines.push(grid[i].map(Number).join(''));
+                        lines.push(grid.map(function (row) { return Number(row[i]); }).join(''));
+                    }
+                    lines.forEach(function (line) {
+                        (line.match(/0{5,}|1{5,}/g) || []).forEach(function (run) { score += run.length - 2; });
+                        var padded = '0000' + line + '0000';
+                        for (var k = 0; k + 11 <= padded.length; k++) {
+                            var w = padded.substr(k, 11);
+                            if (w === '10111010000' || w === '00001011101') { score += 40; }
+                        }
+                    });
+                    for (var y = 0; y < size; y++) {
+                        for (var x = 0; x < size; x++) {
+                            if (grid[y][x]) { dark++; }
+                            if (x < size - 1 && y < size - 1 && grid[y][x] === grid[y][x + 1] && grid[y][x] === grid[y + 1][x] && grid[y][x] === grid[y + 1][x + 1]) { score += 3; }
+                        }
+                    }
+                    return score + (Math.ceil(Math.abs(dark * 20 - size * size * 10) / (size * size)) - 1) * 10;
+                }
+
+                function qrSvg(text) {
+                    var grid = qrCode(text);
+                    if (!grid) { return null; }
+                    var size = grid.length, d = '';
+                    grid.forEach(function (row, y) { row.forEach(function (on, x) { if (on) { d += 'M' + (x + 4) + ' ' + (y + 4) + 'h1v1h-1z'; } }); });
+                    var ns = 'http://www.w3.org/2000/svg';
+                    var svg = document.createElementNS(ns, 'svg');
+                    svg.setAttribute('viewBox', '0 0 ' + (size + 8) + ' ' + (size + 8));
+                    svg.setAttribute('shape-rendering', 'crispEdges');
+                    svg.setAttribute('role', 'img');
+                    svg.setAttribute('aria-label', 'QR code du lien');
+                    var bg = document.createElementNS(ns, 'rect');
+                    bg.setAttribute('width', '100%');
+                    bg.setAttribute('height', '100%');
+                    bg.setAttribute('fill', '#fff');
+                    var path = document.createElementNS(ns, 'path');
+                    path.setAttribute('d', d);
+                    path.setAttribute('fill', '#000');
+                    svg.appendChild(bg);
+                    svg.appendChild(path);
+                    return svg;
+                }
 
                 // ---------- list ----------
                 function loadLinks() {
@@ -654,6 +897,10 @@
                             next.disabled = false;
                             create.link = link;
                             $('#sfMessage').value = buildMessage(link, pwd);
+                            var svg = qrSvg(linkUrl(link.Path));
+                            $('#sfQr').textContent = '';
+                            if (svg) { $('#sfQr').appendChild(svg); }
+                            $('#sfQrBox').hidden = !svg;
                             showStep(3);
                             $('#sfNext').focus();
                             state.filter = 'active';
