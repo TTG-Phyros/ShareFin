@@ -329,9 +329,10 @@ public class ShareController : ControllerBase
     /// <param name="itemId">The video.</param>
     /// <param name="t">Start position in seconds.</param>
     /// <param name="audio">Audio stream index.</param>
-    /// <param name="vcopy">Whether the browser plays the source video codec.</param>
+    /// <param name="vcopy">Whether the browser plays the source video codec. Ignored when a lower quality is asked.</param>
     /// <param name="acopy">Whether the browser plays the source audio codec.</param>
     /// <param name="sid">Random id the page draws once, so viewers behind one address do not stop each other's stream.</param>
+    /// <param name="height">Maximum height for a lower quality (720 or 480), or null for the best one.</param>
     /// <returns>The stream, or 429 when the link already has too many viewers.</returns>
     [HttpGet("items/{itemId}/transcode")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -345,7 +346,8 @@ public class ShareController : ControllerBase
         [FromQuery] int? audio = null,
         [FromQuery] bool vcopy = false,
         [FromQuery] bool acopy = false,
-        [FromQuery] string? sid = null)
+        [FromQuery] string? sid = null,
+        [FromQuery] int? height = null)
     {
         if (!TryAuthorize(token, itemId, out var access, out var error))
         {
@@ -358,7 +360,7 @@ public class ShareController : ControllerBase
             return NotFound();
         }
 
-        if (!IsValidSession(sid) || (audio is not null && source.MediaStreams?.Any(s => s.Type == MediaStreamType.Audio && s.Index == audio) != true))
+        if (!IsValidSession(sid) || (height is not null && !ShareTranscoder.Bitrates.ContainsKey(height.Value)) || (audio is not null && source.MediaStreams?.Any(s => s.Type == MediaStreamType.Audio && s.Index == audio) != true))
         {
             return BadRequest();
         }
@@ -379,7 +381,7 @@ public class ShareController : ControllerBase
             _limiter.Leave(linkId, deviceId);
             return _transcoder.StopAsync(playSessionId);
         });
-        var stream = await _transcoder.StartAsync(access.Item, source, deviceId, playSessionId, startTicks, audio, vcopy, acopy, Request.Headers.UserAgent.ToString()).ConfigureAwait(false);
+        var stream = await _transcoder.StartAsync(access.Item, source, deviceId, playSessionId, startTicks, audio, height ?? ShareTranscoder.DefaultHeight, vcopy && height is null, acopy, Request.Headers.UserAgent.ToString()).ConfigureAwait(false);
         Response.Headers.CacheControl = "private, no-store";
         Response.Headers.AcceptRanges = "none";
         return File(stream, "video/mp4");

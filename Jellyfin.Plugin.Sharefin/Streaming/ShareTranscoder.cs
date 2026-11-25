@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,11 +22,20 @@ namespace Jellyfin.Plugin.Sharefin.Streaming;
 /// </summary>
 public sealed class ShareTranscoder
 {
-    // shortcut: fixed 1080p / 20 Mbps / stereo target when encoding; add per-link quality settings if asked.
-    private const int MaxWidth = 1920;
-    private const int MaxHeight = 1080;
-    private const int MaxVideoBitrate = 20_000_000;
+    /// <summary>The default maximum height.</summary>
+    public const int DefaultHeight = 1080;
+
     private const int MaxAudioChannels = 2;
+
+    /// <summary>
+    /// Qualities the viewer can pick: maximum height to maximum video bitrate. 1080 is the default.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<int, int> Bitrates = new Dictionary<int, int>
+    {
+        [1080] = 20_000_000,
+        [720] = 4_000_000,
+        [480] = 1_500_000,
+    };
 
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly ITranscodeManager _transcodeManager;
@@ -56,11 +66,12 @@ public sealed class ShareTranscoder
     /// <param name="playSessionId">Unique id of this job, to stop it with <see cref="StopAsync"/>.</param>
     /// <param name="startTicks">Start position.</param>
     /// <param name="audioStreamIndex">Audio stream to use, or null for the default one.</param>
+    /// <param name="maxHeight">Maximum height, a key of <see cref="Bitrates"/>; only applies when the video is encoded.</param>
     /// <param name="copyVideo">Whether the browser can play the source video codec.</param>
     /// <param name="copyAudio">Whether the browser can play the source audio codec.</param>
     /// <param name="userAgent">Client user agent, for Jellyfin's job bookkeeping.</param>
     /// <returns>A stream following the growing output file.</returns>
-    public async Task<Stream> StartAsync(BaseItem item, MediaSourceInfo source, string deviceId, string playSessionId, long startTicks, int? audioStreamIndex, bool copyVideo, bool copyAudio, string? userAgent)
+    public async Task<Stream> StartAsync(BaseItem item, MediaSourceInfo source, string deviceId, string playSessionId, long startTicks, int? audioStreamIndex, int maxHeight, bool copyVideo, bool copyAudio, string? userAgent)
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(source);
@@ -78,9 +89,9 @@ public sealed class ShareTranscoder
             AudioCodec = "aac",
             StartTimeTicks = startTicks > 0 ? startTicks : null,
             AudioStreamIndex = audioStreamIndex,
-            MaxWidth = MaxWidth,
-            MaxHeight = MaxHeight,
-            VideoBitRate = MaxVideoBitrate,
+            MaxWidth = ((maxHeight * 16) + 8) / 9, // rounded up (854 for 480): rounding down made Jellyfin output 852x478
+            MaxHeight = maxHeight,
+            VideoBitRate = Bitrates[maxHeight],
             MaxAudioChannels = MaxAudioChannels,
             Context = EncodingContext.Streaming,
         };
