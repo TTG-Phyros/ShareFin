@@ -5,7 +5,7 @@
     <title>Sharefin</title>
 </head>
 <body>
-    <div id="SharefinConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+    <div id="SharefinConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
         <style>
             #SharefinConfigPage { --sf-accent: #00a4dc; --sf-line: color-mix(in srgb, currentColor 14%, transparent); --sf-soft: color-mix(in srgb, currentColor 72%, transparent); }
             #SharefinConfigPage [hidden] { display: none !important; }
@@ -135,6 +135,10 @@
                                 <label for="sfMaxStreams">Lectures simultanées par lien</label>
                                 <input id="sfMaxStreams" class="emby-input" type="number" min="1" max="50" required />
                                 <p class="sfHint">Lectures converties ou remuxées par le serveur. Au-delà, les nouveaux spectateurs sont refusés. La lecture directe d'un fichier compatible n'est pas comptée.</p>
+                            </div>
+                            <div class="sfField sfFieldWide">
+                                <label class="emby-checkbox-label"><input id="sfAllowDownload" type="checkbox" is="emby-checkbox" /><span>Autoriser le téléchargement</span></label>
+                                <p class="sfHint">Le destinataire peut télécharger le fichier original, qui sert aussi à la lecture directe. Décoché, la vidéo passe toujours par le serveur (remux ou conversion) : le fichier n'est jamais servi tel quel, mais le flux lu reste enregistrable.</p>
                             </div>
                         </div>
                         <p id="sfSettingsError" class="sfError" role="alert"></p>
@@ -809,6 +813,7 @@
                         config.MaxFailuresPerLink = perLink;
                         config.MaxFailuresPerIp = perIp;
                         config.MaxStreamsPerLink = streams;
+                        config.AllowDownload = $('#sfAllowDownload').checked;
                         return ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
                             state.config = config;
                             $('#sfPublicUrl').value = url;
@@ -833,6 +838,7 @@
                         $('#sfMaxLink').value = config.MaxFailuresPerLink;
                         $('#sfMaxIp').value = config.MaxFailuresPerIp;
                         $('#sfMaxStreams').value = config.MaxStreamsPerLink;
+                        $('#sfAllowDownload').checked = config.AllowDownload;
                         renderLocalWarning();
                         return loadLinks();
                     }).then(function () { Dashboard.hideLoadingMsg(); openShared(); }, function () { Dashboard.hideLoadingMsg(); });

@@ -33,4 +33,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets how many viewers may stream one link through ffmpeg (remux or transcode) at once.
     /// </summary>
     public int MaxStreamsPerLink { get; set; } = 3;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether recipients may get the original file: direct play and a download button.
+    /// When false, every video goes through ffmpeg (remux or transcode) and the file is never served as is.
+    /// </summary>
+    public bool AllowDownload { get; set; } = true;
 }

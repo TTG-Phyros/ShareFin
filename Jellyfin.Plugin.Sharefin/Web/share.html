@@ -145,7 +145,7 @@
   .row { display:flex; align-items:center; gap:2px; margin-top:6px; }
   .row .grow { flex:1; }
   .time { margin-left:10px; font-size:.9rem; font-variant-numeric:tabular-nums; color:rgba(255,255,255,.85); white-space:nowrap; }
-  .ctl { width:44px; height:44px; border:0; border-radius:50%; display:grid; place-items:center; background:transparent; color:#fff; transition:background .15s; }
+  .ctl { text-decoration:none; width:44px; height:44px; border:0; border-radius:50%; display:grid; place-items:center; background:transparent; color:#fff; transition:background .15s; }
   .ctl:hover { background:rgba(255,255,255,.14); }
   .ctl svg { width:26px; height:26px; }
   .volume { display:flex; align-items:center; }
@@ -233,6 +233,7 @@
       <button id="close" class="ctl" type="button" aria-label="Retour" title="Retour (Échap)"><span data-icon="back"></span></button>
       <div class="np"><strong id="npTitle"></strong><span id="npSub"></span></div>
       <span id="ends" class="ends"></span>
+      <a id="download" class="ctl" aria-label="Télécharger la vidéo" title="Télécharger" download hidden><span data-icon="download"></span></a>
     </div>
     <div class="osd-bottom">
       <div class="timeline">
@@ -291,7 +292,8 @@
     fullscreen: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
     fullscreenExit: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
     star: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
-    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'
+    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    download: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z'
   };
   var data = null;   // the /content response
   var queue = [];    // every playable item, in order: { item, title, sub, season }
@@ -553,6 +555,8 @@
         player.classList.remove('show-next');
         seek.max = Math.floor(info.DurationSeconds) || 0;
         show('pip', !!document.pictureInPictureEnabled);
+        $('download').href = base + 'items/' + entry.item.Id + '/stream';
+        show('download', info.Download);
         player.hidden = false;
         document.body.classList.add('noscroll');
         poke();

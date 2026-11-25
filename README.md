@@ -57,7 +57,8 @@ Autres réglages :
 
 - durée de mémorisation du mot de passe pour un lien permanent (30 jours par défaut, renouvelée à chaque visite) ;
 - nombre d'échecs tolérés par lien (5) et par adresse IP (20) ;
-- nombre de lectures simultanées par lien passant par ffmpeg (3) : au-delà, un nouveau spectateur voit « Trop de lectures en cours sur ce lien ». Cela évite qu'un lien diffusé trop largement lance un ffmpeg par personne.
+- nombre de lectures simultanées par lien passant par ffmpeg (3) : au-delà, un nouveau spectateur voit « Trop de lectures en cours sur ce lien ». Cela évite qu'un lien diffusé trop largement lance un ffmpeg par personne ;
+- **autoriser le téléchargement** (activé par défaut) : le lecteur propose de télécharger le fichier original. Désactivé, le fichier n'est jamais servi tel quel : la lecture passe toujours par ffmpeg (remux si le navigateur lit les codecs, sinon conversion). Cela empêche le téléchargement direct, pas l'enregistrement du flux.
 
 Le destinataire ouvre `https://votre-domaine/Sharefin/s/<token>`, saisit le mot de passe, parcourt les saisons et épisodes, puis regarde la vidéo dans son navigateur. La page reprend l'image de fond, le logo et les métadonnées de Jellyfin ; le lecteur plein écran gère l'audio, les sous-titres, l'épisode suivant, les raccourcis clavier (espace, ←/→, F, M) et reprend là où le destinataire s'était arrêté (position mémorisée dans son navigateur).
 
@@ -93,7 +94,7 @@ Les compteurs anti brute-force sont en mémoire et repartent de zéro au redéma
 
 ## Lecture et transcodage
 
-1. **Lecture directe** : si le fichier est un MP4/M4V/MOV ou un WebM et que le navigateur sait décoder ses codecs (`canPlayType`), il est servi tel quel, avec les requêtes HTTP Range. Le saut dans la vidéo est natif.
+1. **Lecture directe** (si le téléchargement est autorisé) : si le fichier est un MP4/M4V/MOV ou un WebM et que le navigateur sait décoder ses codecs (`canPlayType`), il est servi tel quel, avec les requêtes HTTP Range. Le saut dans la vidéo est natif.
 2. **Sinon, flux MP4 fragmenté progressif** produit par le ffmpeg de Jellyfin, via son propre gestionnaire de transcodage (`ITranscodeManager`) et ses réglages d'encodage, accélération matérielle comprise. Il n'y a ni utilisateur ni clé API derrière ce job.
    - Si le navigateur sait lire le codec vidéo (ex. H.264 dans un MKV), la vidéo est **copiée** (remux, très léger) ; sinon elle est encodée en H.264.
    - Même logique pour l'audio : copié si lisible, sinon encodé en AAC (DTS, AC3, TrueHD…).

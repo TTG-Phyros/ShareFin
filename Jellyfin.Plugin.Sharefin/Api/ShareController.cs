@@ -108,7 +108,7 @@ public class ShareController : ControllerBase
         get
         {
             var c = Plugin.Instance?.Configuration;
-            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.MaxStreamsPerLink ?? 3);
+            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.MaxStreamsPerLink ?? 3, c?.AllowDownload ?? true);
         }
     }
 
@@ -240,7 +240,8 @@ public class ShareController : ControllerBase
 
     /// <summary>
     /// Gets what the browser needs to choose between direct play and transcoding.
-    /// No file path is returned.
+    /// No file path is returned. Without <see cref="Configuration.PluginConfiguration.AllowDownload"/>,
+    /// no direct type is given either, so the browser always goes through ffmpeg.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
@@ -272,11 +273,13 @@ public class ShareController : ControllerBase
         var streams = source.MediaStreams ?? [];
         var video = streams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
         var defaultAudio = source.DefaultAudioStreamIndex ?? streams.FirstOrDefault(s => s.Type == MediaStreamType.Audio)?.Index;
+        var download = Settings.AllowDownload;
         return Ok(new
         {
             Name = access.Item.Name,
             DurationSeconds = (source.RunTimeTicks ?? access.Item.RunTimeTicks ?? 0) / (double)TicksPerSecond,
-            DirectMime = DirectMime(source.Path),
+            DirectMime = download ? DirectMime(source.Path) : null,
+            Download = download,
             VideoCodec = video?.Codec,
             DefaultAudioIndex = defaultAudio,
             Audio = streams.Where(s => s.Type == MediaStreamType.Audio)
@@ -288,7 +291,8 @@ public class ShareController : ControllerBase
     }
 
     /// <summary>
-    /// Streams the original file, with HTTP range support.
+    /// Streams the original file, with HTTP range support, for direct play and the download button.
+    /// Not found unless <see cref="Configuration.PluginConfiguration.AllowDownload"/>.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
@@ -306,13 +310,14 @@ public class ShareController : ControllerBase
         }
 
         var source = LocalSource(access.Item);
-        if (source is null || !System.IO.File.Exists(source.Path))
+        if (!Settings.AllowDownload || source is null || !System.IO.File.Exists(source.Path))
         {
             return NotFound();
         }
 
         Response.Headers.CacheControl = "private, no-store";
-        return PhysicalFile(source.Path, DirectMime(source.Path) ?? "application/octet-stream", enableRangeProcessing: true);
+        // The attachment name only matters to the download button: a <video> ignores Content-Disposition.
+        return PhysicalFile(source.Path, DirectMime(source.Path) ?? "application/octet-stream", DownloadName(access.Item, source.Path), enableRangeProcessing: true);
     }
 
     /// <summary>
@@ -449,6 +454,14 @@ public class ShareController : ControllerBase
         }).ConfigureAwait(false);
         Response.Headers.CacheControl = "private, max-age=3600";
         return PhysicalFile(path, mime ?? "image/jpeg");
+    }
+
+    private static string DownloadName(BaseItem item, string path)
+    {
+        var name = item is Episode e
+            ? string.Create(CultureInfo.InvariantCulture, $"{e.SeriesName} S{e.ParentIndexNumber ?? 0:00}E{e.IndexNumber ?? 0:00} - {e.Name}")
+            : item.ProductionYear is { } year && !item.Name.EndsWith($"({year})", StringComparison.Ordinal) ? string.Create(CultureInfo.InvariantCulture, $"{item.Name} ({year})") : item.Name;
+        return name + Path.GetExtension(path);
     }
 
     private static string? DirectMime(string? path) => Path.GetExtension(path)?.ToLowerInvariant() switch
@@ -612,5 +625,5 @@ public class ShareController : ControllerBase
 
     private sealed record SeasonView(string Id, string Name, int? Index, List<object> Episodes);
 
-    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, int MaxStreamsPerLink);
+    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, int MaxStreamsPerLink, bool AllowDownload);
 }
