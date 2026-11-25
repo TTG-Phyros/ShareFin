@@ -55,6 +55,7 @@ public class ShareController : ControllerBase
     private readonly ShareCookie _cookie;
     private readonly LoginThrottle _throttle;
     private readonly ShareTranscoder _transcoder;
+    private readonly StreamLimiter _limiter;
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IImageProcessor _imageProcessor;
@@ -69,6 +70,7 @@ public class ShareController : ControllerBase
     /// <param name="cookie">The access cookie service.</param>
     /// <param name="throttle">The password attempt limiter.</param>
     /// <param name="transcoder">The transcoder.</param>
+    /// <param name="limiter">The per-link stream counter.</param>
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="mediaSourceManager">The media source manager.</param>
     /// <param name="imageProcessor">The image processor.</param>
@@ -80,6 +82,7 @@ public class ShareController : ControllerBase
         ShareCookie cookie,
         LoginThrottle throttle,
         ShareTranscoder transcoder,
+        StreamLimiter limiter,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
         IImageProcessor imageProcessor,
@@ -91,6 +94,7 @@ public class ShareController : ControllerBase
         _cookie = cookie;
         _throttle = throttle;
         _transcoder = transcoder;
+        _limiter = limiter;
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
         _imageProcessor = imageProcessor;
@@ -104,7 +108,7 @@ public class ShareController : ControllerBase
         get
         {
             var c = Plugin.Instance?.Configuration;
-            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20);
+            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.MaxStreamsPerLink ?? 3);
         }
     }
 
@@ -233,7 +237,7 @@ public class ShareController : ControllerBase
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
-    /// <returns>Container, codecs, audio and text subtitle tracks.</returns>
+    /// <returns>Container, codecs, audio and text subtitle tracks, and whether the link has no stream slot left for this viewer.</returns>
     [HttpGet("items/{itemId}/playback")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -266,6 +270,7 @@ public class ShareController : ControllerBase
                 .Select(s => new { s.Index, s.Codec, s.Channels, Title = s.DisplayTitle ?? s.Language ?? s.Codec }),
             Subtitles = streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)
                 .Select(s => new { s.Index, s.Language, Title = s.DisplayTitle ?? s.Language ?? s.Index.ToString(CultureInfo.InvariantCulture), s.IsDefault }),
+            StreamsBusy = _limiter.IsFull(access.Link.Id, DeviceId(access.Link), Settings.MaxStreamsPerLink),
         });
     }
 
@@ -300,6 +305,7 @@ public class ShareController : ControllerBase
     /// <summary>
     /// Streams a remuxed or transcoded fragmented MP4, starting at a given position.
     /// One job per link and client address: a new request (a seek) stops the previous job.
+    /// At most <see cref="Configuration.PluginConfiguration.MaxStreamsPerLink"/> viewers per link.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
@@ -307,11 +313,12 @@ public class ShareController : ControllerBase
     /// <param name="audio">Audio stream index.</param>
     /// <param name="vcopy">Whether the browser plays the source video codec.</param>
     /// <param name="acopy">Whether the browser plays the source audio codec.</param>
-    /// <returns>The stream.</returns>
+    /// <returns>The stream, or 429 when the link already has too many viewers.</returns>
     [HttpGet("items/{itemId}/transcode")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult> Transcode(
         [FromRoute] string token,
         [FromRoute] Guid itemId,
@@ -336,12 +343,23 @@ public class ShareController : ControllerBase
             return BadRequest();
         }
 
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var deviceId = "sharefin-" + access.Link.Id.ToString("N") + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ip)).AsSpan(0, 6));
+        var linkId = access.Link.Id;
+        var deviceId = DeviceId(access.Link);
+        if (!_limiter.TryEnter(linkId, deviceId, Settings.MaxStreamsPerLink))
+        {
+            _logger.LogInformation("Sharefin: stream refused for link {LinkId}, too many viewers", linkId);
+            return StatusCode(StatusCodes.Status429TooManyRequests);
+        }
+
         var startTicks = (long)(Math.Clamp(t, 0, 7 * 24 * 3600) * TicksPerSecond);
         var playSessionId = Guid.NewGuid().ToString("N");
+        // Registered before starting, so the slot is released even if ffmpeg fails to start; also runs when the browser disconnects.
+        Response.OnCompleted(() =>
+        {
+            _limiter.Leave(linkId, deviceId);
+            return _transcoder.StopAsync(playSessionId);
+        });
         var stream = await _transcoder.StartAsync(access.Item, source, deviceId, playSessionId, startTicks, audio, vcopy, acopy, Request.Headers.UserAgent.ToString()).ConfigureAwait(false);
-        Response.OnCompleted(() => _transcoder.StopAsync(playSessionId)); // also runs when the browser disconnects
         Response.Headers.CacheControl = "private, no-store";
         Response.Headers.AcceptRanges = "none";
         return File(stream, "video/mp4");
@@ -537,6 +555,15 @@ public class ShareController : ControllerBase
             .FirstOrDefault(s => s.Protocol == MediaProtocol.File && !string.IsNullOrEmpty(s.Path));
     }
 
+    /// <summary>
+    /// The transcode device id of the caller: one ffmpeg job, and one stream slot, per link and viewer.
+    /// </summary>
+    private string DeviceId(ShareLink link)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return "sharefin-" + link.Id.ToString("N") + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ip)).AsSpan(0, 6));
+    }
+
     private void IssueCookie(ShareLink link)
     {
         var now = DateTimeOffset.UtcNow;
@@ -565,5 +592,5 @@ public class ShareController : ControllerBase
 
     private sealed record SeasonView(string Id, string Name, int? Index, List<object> Episodes);
 
-    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp);
+    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, int MaxStreamsPerLink);
 }

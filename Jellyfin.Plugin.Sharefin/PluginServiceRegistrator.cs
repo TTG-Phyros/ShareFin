@@ -20,6 +20,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ShareCookie>();
         serviceCollection.AddSingleton<LoginThrottle>();
         serviceCollection.AddSingleton<ShareTranscoder>();
+        serviceCollection.AddSingleton<StreamLimiter>();
         serviceCollection.AddHostedService<WebInjection>();
     }
 }

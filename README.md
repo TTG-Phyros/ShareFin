@@ -56,7 +56,8 @@ La liste se filtre par statut (actifs, expirent dans les 3 jours, expirés, rév
 Autres réglages :
 
 - durée de mémorisation du mot de passe pour un lien permanent (30 jours par défaut, renouvelée à chaque visite) ;
-- nombre d'échecs tolérés par lien (5) et par adresse IP (20).
+- nombre d'échecs tolérés par lien (5) et par adresse IP (20) ;
+- nombre de lectures simultanées par lien passant par ffmpeg (3) : au-delà, un nouveau spectateur voit « Trop de lectures en cours sur ce lien ». Cela évite qu'un lien diffusé trop largement lance un ffmpeg par personne.
 
 Le destinataire ouvre `https://votre-domaine/Sharefin/s/<token>`, saisit le mot de passe, parcourt les saisons et épisodes, puis regarde la vidéo dans son navigateur. La page reprend l'image de fond, le logo et les métadonnées de Jellyfin ; le lecteur plein écran gère l'audio, les sous-titres, l'épisode suivant, les raccourcis clavier (espace, ←/→, F, M) et reprend là où le destinataire s'était arrêté (position mémorisée dans son navigateur).
 

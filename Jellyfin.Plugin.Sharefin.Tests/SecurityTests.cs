@@ -3,6 +3,7 @@ using System.IO;
 using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
+using Jellyfin.Plugin.Sharefin.Streaming;
 using Jellyfin.Plugin.Sharefin.Web;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -352,5 +353,42 @@ public class IndexPatchTests
         Assert.Contains("Créer un lien de partage", once, StringComparison.Ordinal);
         Assert.EndsWith("</script></body></html>", once, StringComparison.Ordinal);
         Assert.Equal(once, IndexPatch.Patch(new PatchPayload { Contents = once }));
+    }
+}
+
+public class StreamLimiterTests
+{
+    private static readonly Guid Link = Guid.NewGuid();
+
+    [Fact]
+    public void RefusesViewersBeyondTheLimit()
+    {
+        var limiter = new StreamLimiter();
+        Assert.True(limiter.TryEnter(Link, "a", 2));
+        Assert.True(limiter.TryEnter(Link, "b", 2));
+        Assert.True(limiter.IsFull(Link, "c", 2));
+        Assert.False(limiter.TryEnter(Link, "c", 2));
+        Assert.True(limiter.TryEnter(Guid.NewGuid(), "c", 2)); // other links are counted apart
+    }
+
+    [Fact]
+    public void ASeekNeverTakesASecondSlot()
+    {
+        var limiter = new StreamLimiter();
+        Assert.True(limiter.TryEnter(Link, "a", 1));
+        Assert.False(limiter.IsFull(Link, "a", 1));
+        Assert.True(limiter.TryEnter(Link, "a", 1)); // the new request starts before the old one ends
+        limiter.Leave(Link, "a");
+        Assert.False(limiter.TryEnter(Link, "b", 1)); // "a" still streams
+        limiter.Leave(Link, "a");
+        Assert.True(limiter.TryEnter(Link, "b", 1));
+    }
+
+    [Fact]
+    public void LeaveWithoutEnterIsHarmless()
+    {
+        var limiter = new StreamLimiter();
+        limiter.Leave(Link, "a");
+        Assert.True(limiter.TryEnter(Link, "a", 1));
     }
 }

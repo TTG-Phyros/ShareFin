@@ -131,6 +131,11 @@
                                 <input id="sfMaxIp" class="emby-input" type="number" min="1" max="1000" required />
                                 <p class="sfHint">Au-delà, blocage d'une minute, doublé à chaque nouveau blocage (15 minutes au plus).</p>
                             </div>
+                            <div class="sfField">
+                                <label for="sfMaxStreams">Lectures simultanées par lien</label>
+                                <input id="sfMaxStreams" class="emby-input" type="number" min="1" max="50" required />
+                                <p class="sfHint">Lectures converties ou remuxées par le serveur. Au-delà, les nouveaux spectateurs sont refusés. La lecture directe d'un fichier compatible n'est pas comptée.</p>
+                            </div>
                         </div>
                         <p id="sfSettingsError" class="sfError" role="alert"></p>
                         <div style="padding-bottom:1em">
@@ -792,9 +797,9 @@
                             return;
                         }
                     }
-                    var days = readInt('#sfRememberDays', 1, 3650), perLink = readInt('#sfMaxLink', 1, 100), perIp = readInt('#sfMaxIp', 1, 1000);
-                    if (days === null || perLink === null || perIp === null) {
-                        err.textContent = 'Vérifiez les nombres : mémorisation 1 à 3650 jours, échecs 1 à 100 par lien et 1 à 1000 par IP.';
+                    var days = readInt('#sfRememberDays', 1, 3650), perLink = readInt('#sfMaxLink', 1, 100), perIp = readInt('#sfMaxIp', 1, 1000), streams = readInt('#sfMaxStreams', 1, 50);
+                    if (days === null || perLink === null || perIp === null || streams === null) {
+                        err.textContent = 'Vérifiez les nombres : mémorisation 1 à 3650 jours, échecs 1 à 100 par lien et 1 à 1000 par IP, lectures simultanées 1 à 50.';
                         return;
                     }
                     err.textContent = '';
@@ -803,6 +808,7 @@
                         config.RememberDays = days;
                         config.MaxFailuresPerLink = perLink;
                         config.MaxFailuresPerIp = perIp;
+                        config.MaxStreamsPerLink = streams;
                         return ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
                             state.config = config;
                             $('#sfPublicUrl').value = url;
@@ -826,6 +832,7 @@
                         $('#sfRememberDays').value = config.RememberDays;
                         $('#sfMaxLink').value = config.MaxFailuresPerLink;
                         $('#sfMaxIp').value = config.MaxFailuresPerIp;
+                        $('#sfMaxStreams').value = config.MaxStreamsPerLink;
                         renderLocalWarning();
                         return loadLinks();
                     }).then(function () { Dashboard.hideLoadingMsg(); openShared(); }, function () { Dashboard.hideLoadingMsg(); });

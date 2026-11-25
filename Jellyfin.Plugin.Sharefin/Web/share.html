@@ -720,7 +720,11 @@
       return;
     }
     player.classList.remove('loading');
-    toast('Lecture impossible.');
+    if (play.mode !== 'transcode') { toast('Lecture impossible.'); return; }
+    // A media element never exposes the HTTP status: ask whether the 429 "too many viewers" is the cause.
+    api('items/' + play.id + '/playback').then(function (r) { return r.ok ? r.json() : null; }).catch(noop).then(function (info) {
+      toast(info && info.StreamsBusy ? 'Trop de lectures en cours sur ce lien. Réessayez plus tard.' : 'Lecture impossible.');
+    });
   });
 
   var v = recall('volume');

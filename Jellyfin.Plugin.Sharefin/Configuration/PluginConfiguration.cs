@@ -28,4 +28,9 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the failed password attempts allowed per IP address before it locks.
     /// </summary>
     public int MaxFailuresPerIp { get; set; } = 20;
+
+    /// <summary>
+    /// Gets or sets how many viewers may stream one link through ffmpeg (remux or transcode) at once.
+    /// </summary>
+    public int MaxStreamsPerLink { get; set; } = 3;
 }
