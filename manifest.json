@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.4.1.0",
+        "changelog": "- Regroupe les lectures transcodées dans le module SharePlayback",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TTG-Phyros/ShareFin/releases/download/v1.4.1/sharefin_1.4.1.0.zip",
+        "checksum": "970b229583e7f886dc14b6d949930c82",
+        "timestamp": "2026-11-25T23:43:21Z"
+      },
+      {
         "version": "1.4.0.0",
         "changelog": "- Corrige l'échec des lectures démarrées au même instant\n- Affiche les miniatures trickplay au survol de la barre de lecture\n- Affiche un QR code du lien à l'étape « Partager »\n- Ajoute « Passer l'intro » et les chapitres au lecteur\n- Permet de choisir la qualité de lecture\n- Ajoute le réglage « Autoriser le téléchargement »\n- Compte une ouverture par session de navigateur\n- Sépare les flux transcodés par onglet plutôt que par adresse IP\n- Limite les lectures simultanées par lien passant par ffmpeg",
         "targetAbi": "12.0.0.0",
