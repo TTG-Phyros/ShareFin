@@ -104,7 +104,7 @@ Limites connues du mode transcodé :
 - **Pas de HLS.** Pour se déplacer dans la vidéo, le lecteur relance le flux à la position choisie (curseur « Position » sous la vidéo). Ce curseur n'est pas disponible en plein écran ; la barre native ne permet de se déplacer que dans la partie déjà chargée.
 - **En mode remux (vidéo copiée)**, ffmpeg repart de l'image clé précédant la position demandée : après un saut, la position affichée et les sous-titres peuvent être décalés de quelques secondes (selon l'espacement des images clés du fichier).
 - Qualité d'encodage fixe : 1080p maximum, 20 Mb/s au plus, stéréo.
-- Un seul flux transcodé à la fois par lien et par adresse IP : un nouveau saut arrête le flux précédent. Deux personnes derrière la même IP qui regardent le même lien en mode transcodé se coupent mutuellement.
+- Un seul flux transcodé à la fois par lien et par onglet de navigateur : un nouveau saut arrête le flux précédent de cet onglet, sans toucher aux autres spectateurs, même derrière la même adresse IP.
 - Fichiers locaux uniquement : pas de `.strm`, de TV en direct ni de sources distantes.
 
 ## Développement

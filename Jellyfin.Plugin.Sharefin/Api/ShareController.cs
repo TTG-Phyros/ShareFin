@@ -237,17 +237,23 @@ public class ShareController : ControllerBase
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
+    /// <param name="sid">The viewer's random session id, see <see cref="Transcode"/>.</param>
     /// <returns>Container, codecs, audio and text subtitle tracks, and whether the link has no stream slot left for this viewer.</returns>
     [HttpGet("items/{itemId}/playback")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult Playback([FromRoute] string token, [FromRoute] Guid itemId)
+    public ActionResult Playback([FromRoute] string token, [FromRoute] Guid itemId, [FromQuery] string? sid = null)
     {
         NoStore();
         if (!TryAuthorize(token, itemId, out var access, out var error))
         {
             return error;
+        }
+
+        if (!IsValidSession(sid))
+        {
+            return BadRequest();
         }
 
         var source = LocalSource(access.Item);
@@ -270,7 +276,7 @@ public class ShareController : ControllerBase
                 .Select(s => new { s.Index, s.Codec, s.Channels, Title = s.DisplayTitle ?? s.Language ?? s.Codec }),
             Subtitles = streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)
                 .Select(s => new { s.Index, s.Language, Title = s.DisplayTitle ?? s.Language ?? s.Index.ToString(CultureInfo.InvariantCulture), s.IsDefault }),
-            StreamsBusy = _limiter.IsFull(access.Link.Id, DeviceId(access.Link), Settings.MaxStreamsPerLink),
+            StreamsBusy = _limiter.IsFull(access.Link.Id, DeviceId(access.Link, sid), Settings.MaxStreamsPerLink),
         });
     }
 
@@ -304,7 +310,7 @@ public class ShareController : ControllerBase
 
     /// <summary>
     /// Streams a remuxed or transcoded fragmented MP4, starting at a given position.
-    /// One job per link and client address: a new request (a seek) stops the previous job.
+    /// One job per link and viewer (browser tab): a new request (a seek) stops the previous job.
     /// At most <see cref="Configuration.PluginConfiguration.MaxStreamsPerLink"/> viewers per link.
     /// </summary>
     /// <param name="token">The link token.</param>
@@ -313,6 +319,7 @@ public class ShareController : ControllerBase
     /// <param name="audio">Audio stream index.</param>
     /// <param name="vcopy">Whether the browser plays the source video codec.</param>
     /// <param name="acopy">Whether the browser plays the source audio codec.</param>
+    /// <param name="sid">Random id the page draws once, so viewers behind one address do not stop each other's stream.</param>
     /// <returns>The stream, or 429 when the link already has too many viewers.</returns>
     [HttpGet("items/{itemId}/transcode")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -325,7 +332,8 @@ public class ShareController : ControllerBase
         [FromQuery] double t = 0,
         [FromQuery] int? audio = null,
         [FromQuery] bool vcopy = false,
-        [FromQuery] bool acopy = false)
+        [FromQuery] bool acopy = false,
+        [FromQuery] string? sid = null)
     {
         if (!TryAuthorize(token, itemId, out var access, out var error))
         {
@@ -338,13 +346,13 @@ public class ShareController : ControllerBase
             return NotFound();
         }
 
-        if (audio is not null && source.MediaStreams?.Any(s => s.Type == MediaStreamType.Audio && s.Index == audio) != true)
+        if (!IsValidSession(sid) || (audio is not null && source.MediaStreams?.Any(s => s.Type == MediaStreamType.Audio && s.Index == audio) != true))
         {
             return BadRequest();
         }
 
         var linkId = access.Link.Id;
-        var deviceId = DeviceId(access.Link);
+        var deviceId = DeviceId(access.Link, sid);
         if (!_limiter.TryEnter(linkId, deviceId, Settings.MaxStreamsPerLink))
         {
             _logger.LogInformation("Sharefin: stream refused for link {LinkId}, too many viewers", linkId);
@@ -557,12 +565,15 @@ public class ShareController : ControllerBase
 
     /// <summary>
     /// The transcode device id of the caller: one ffmpeg job, and one stream slot, per link and viewer.
+    /// The address stays in the hash, so knowing someone's session id is not enough to stop their stream.
     /// </summary>
-    private string DeviceId(ShareLink link)
+    private string DeviceId(ShareLink link, string? sid)
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return "sharefin-" + link.Id.ToString("N") + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ip)).AsSpan(0, 6));
+        return "sharefin-" + link.Id.ToString("N") + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ip + "|" + sid)).AsSpan(0, 8));
     }
+
+    private static bool IsValidSession(string? sid) => sid is null || (sid.Length is > 0 and <= 64 && sid.All(char.IsAsciiLetterOrDigit));
 
     private void IssueCookie(ShareLink link)
     {

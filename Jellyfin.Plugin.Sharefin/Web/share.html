@@ -298,6 +298,8 @@
   var season = null; // index of the season shown
   var play = null;   // { index, info, mode, offset, forceTranscode, pending }
   var hideTimer, seekTimer, toastTimer, lastSave = 0, lastPointer = 'mouse', dragging = false;
+  // One per page load: the server runs one ffmpeg job per viewer, so two people behind the same address no longer cut each other off.
+  var sid = Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(12)), function (b) { return (b + 256).toString(16).slice(1); }).join('');
   var noop = function () {};
 
   function show(id, visible) { $(id).hidden = !visible; }
@@ -530,7 +532,7 @@
 
   function openPlayer(index, fromStart) {
     var entry = queue[index];
-    api('items/' + entry.item.Id + '/playback').then(function (r) {
+    api('items/' + entry.item.Id + '/playback?sid=' + sid).then(function (r) {
       if (!r.ok) { if (r.status === 401) location.reload(); else toast('Lecture impossible.'); return; }
       return r.json().then(function (info) {
         var prevSub = play && play.info.Subtitles.filter(function (s) { return String(s.Index) === $('subs').value; })[0];
@@ -593,7 +595,7 @@
     } else {
       play.mode = 'transcode';
       play.offset = t;
-      var q = 't=' + Math.floor(t) + (info.Audio.length ? '&audio=' + audio : '') +
+      var q = 'sid=' + sid + '&t=' + Math.floor(t) + (info.Audio.length ? '&audio=' + audio : '') +
         '&vcopy=' + (canVideo(info.VideoCodec) ? 'true' : 'false') +
         '&acopy=' + (canAudio(audioCodec(info, audio)) ? 'true' : 'false');
       video.src = base + 'items/' + play.id + '/transcode?' + q;
@@ -722,7 +724,7 @@
     player.classList.remove('loading');
     if (play.mode !== 'transcode') { toast('Lecture impossible.'); return; }
     // A media element never exposes the HTTP status: ask whether the 429 "too many viewers" is the cause.
-    api('items/' + play.id + '/playback').then(function (r) { return r.ok ? r.json() : null; }).catch(noop).then(function (info) {
+    api('items/' + play.id + '/playback?sid=' + sid).then(function (r) { return r.ok ? r.json() : null; }).catch(noop).then(function (info) {
       toast(info && info.StreamsBusy ? 'Trop de lectures en cours sur ce lien. Réessayez plus tard.' : 'Lecture impossible.');
     });
   });
