@@ -8,10 +8,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
+using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Drawing;
 using MediaBrowser.Controller.Dto;
@@ -19,6 +21,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
+using MediaBrowser.Controller.MediaSegments;
 using MediaBrowser.Model.Branding;
 using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
@@ -61,6 +64,8 @@ public class ShareController : ControllerBase
     private readonly IImageProcessor _imageProcessor;
     private readonly ISubtitleEncoder _subtitleEncoder;
     private readonly IServerConfigurationManager _configurationManager;
+    private readonly IMediaSegmentManager _segmentManager;
+    private readonly IChapterManager _chapterManager;
     private readonly ILogger<ShareController> _logger;
 
     /// <summary>
@@ -76,6 +81,8 @@ public class ShareController : ControllerBase
     /// <param name="imageProcessor">The image processor.</param>
     /// <param name="subtitleEncoder">The subtitle encoder.</param>
     /// <param name="configurationManager">The server configuration, for the custom CSS theme.</param>
+    /// <param name="segmentManager">The media segments (intro, recap).</param>
+    /// <param name="chapterManager">The chapters.</param>
     /// <param name="logger">The logger.</param>
     public ShareController(
         ShareLinkStore store,
@@ -88,6 +95,8 @@ public class ShareController : ControllerBase
         IImageProcessor imageProcessor,
         ISubtitleEncoder subtitleEncoder,
         IServerConfigurationManager configurationManager,
+        IMediaSegmentManager segmentManager,
+        IChapterManager chapterManager,
         ILogger<ShareController> logger)
     {
         _store = store;
@@ -100,6 +109,8 @@ public class ShareController : ControllerBase
         _imageProcessor = imageProcessor;
         _subtitleEncoder = subtitleEncoder;
         _configurationManager = configurationManager;
+        _segmentManager = segmentManager;
+        _chapterManager = chapterManager;
         _logger = logger;
     }
 
@@ -246,12 +257,12 @@ public class ShareController : ControllerBase
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
     /// <param name="sid">The viewer's random session id, see <see cref="Transcode"/>.</param>
-    /// <returns>Container, codecs, audio and text subtitle tracks, and whether the link has no stream slot left for this viewer.</returns>
+    /// <returns>Container, codecs, audio and text subtitle tracks, intro and recap segments, chapters, and whether the link has no stream slot left for this viewer.</returns>
     [HttpGet("items/{itemId}/playback")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult Playback([FromRoute] string token, [FromRoute] Guid itemId, [FromQuery] string? sid = null)
+    public async Task<ActionResult> Playback([FromRoute] string token, [FromRoute] Guid itemId, [FromQuery] string? sid = null)
     {
         NoStore();
         if (!TryAuthorize(token, itemId, out var access, out var error))
@@ -274,6 +285,7 @@ public class ShareController : ControllerBase
         var video = streams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
         var defaultAudio = source.DefaultAudioStreamIndex ?? streams.FirstOrDefault(s => s.Type == MediaStreamType.Audio)?.Index;
         var download = Settings.AllowDownload;
+        var segments = await _segmentManager.GetSegmentsAsync(access.Item, [MediaSegmentType.Intro, MediaSegmentType.Recap], _libraryManager.GetLibraryOptions(access.Item), true).ConfigureAwait(false);
         return Ok(new
         {
             Name = access.Item.Name,
@@ -286,6 +298,8 @@ public class ShareController : ControllerBase
                 .Select(s => new { s.Index, s.Codec, s.Channels, Title = s.DisplayTitle ?? s.Language ?? s.Codec }),
             Subtitles = streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)
                 .Select(s => new { s.Index, s.Language, Title = s.DisplayTitle ?? s.Language ?? s.Index.ToString(CultureInfo.InvariantCulture), s.IsDefault }),
+            Segments = segments.Select(s => new { Type = s.Type.ToString(), Start = s.StartTicks / (double)TicksPerSecond, End = s.EndTicks / (double)TicksPerSecond }),
+            Chapters = _chapterManager.GetChapters(access.Item.Id).Select(c => new { c.Name, Start = c.StartPositionTicks / (double)TicksPerSecond }),
             StreamsBusy = _limiter.IsFull(access.Link.Id, DeviceId(access.Link, sid), Settings.MaxStreamsPerLink),
         });
     }

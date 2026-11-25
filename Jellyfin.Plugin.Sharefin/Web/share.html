@@ -141,7 +141,9 @@
   .ends { color:rgba(255,255,255,.75); font-size:.9rem; white-space:nowrap; }
   .osd-bottom { padding:60px max(20px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background:linear-gradient(transparent, rgba(0,0,0,.85)); }
   .timeline { position:relative; }
-  .tip { position:absolute; bottom:24px; transform:translateX(-50%); padding:2px 8px; border-radius:6px; background:rgba(20,20,26,.92); font-size:.8rem; font-variant-numeric:tabular-nums; pointer-events:none; }
+  .tip { position:absolute; bottom:24px; transform:translateX(-50%); white-space:nowrap; padding:2px 8px; border-radius:6px; background:rgba(20,20,26,.92); font-size:.8rem; font-variant-numeric:tabular-nums; pointer-events:none; }
+  .marks { position:absolute; left:0; right:0; top:7px; height:4px; pointer-events:none; }
+  .marks i { position:absolute; top:0; width:3px; height:4px; margin-left:-1px; background:rgba(0,0,0,.75); }
   .row { display:flex; align-items:center; gap:2px; margin-top:6px; }
   .row .grow { flex:1; }
   .time { margin-left:10px; font-size:.9rem; font-variant-numeric:tabular-nums; color:rgba(255,255,255,.85); white-space:nowrap; }
@@ -165,6 +167,9 @@
   .player.paused:not(.loading) .bigplay { display:grid; }
   .upnext { position:absolute; right:max(20px, env(safe-area-inset-right)); bottom:124px; display:none; align-items:center; gap:12px; max-width:min(380px, calc(100vw - 40px)); padding:10px 14px 10px 18px; border:1px solid var(--line); border-radius:12px; background:var(--overlay); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); color:#fff; font-weight:600; text-align:left; transition:bottom .35s; animation:rise .3s ease both; }
   .player.show-next .upnext { display:flex; }
+  .skip { position:absolute; right:max(20px, env(safe-area-inset-right)); bottom:124px; padding:12px 22px; border:1px solid var(--line); border-radius:12px; background:var(--overlay); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); color:#fff; font-weight:600; transition:bottom .35s, background .15s; animation:rise .3s ease both; }
+  .skip:hover { background:var(--accent); }
+  .player.idle .skip { bottom:28px; }
   .player.idle .upnext { bottom:28px; }
   .upnext .t { min-width:0; }
   .upnext small { display:block; color:var(--muted); font-size:.72rem; font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
@@ -238,6 +243,7 @@
     <div class="osd-bottom">
       <div class="timeline">
         <span id="tip" class="tip" hidden></span>
+        <div id="marks" class="marks" aria-hidden="true"></div>
         <input id="seek" class="range" type="range" min="0" max="0" step="1" value="0" aria-label="Position">
       </div>
       <div class="row">
@@ -258,6 +264,7 @@
     </div>
   </div>
   <button id="bigPlay" class="bigplay" type="button" aria-label="Lecture"><span data-icon="play"></span></button>
+  <button id="skip" class="skip" type="button" hidden></button>
   <button id="upNext" class="upnext" type="button"><span class="t"><small>Épisode suivant</small><span id="upNextTitle"></span></span><span data-icon="next"></span></button>
   <div id="menu" class="menu" hidden>
     <label id="audioBox">Audio <select id="audio"></select></label>
@@ -554,6 +561,14 @@
         $('upNextTitle').textContent = next ? next.title : '';
         player.classList.remove('show-next');
         seek.max = Math.floor(info.DurationSeconds) || 0;
+        var marks = $('marks'), d = info.DurationSeconds;
+        marks.textContent = '';
+        info.Chapters.forEach(function (c) {
+          if (!d || c.Start < 1 || c.Start > d - 1) return;
+          var m = el('i');
+          m.style.left = c.Start / d * 100 + '%';
+          marks.appendChild(m);
+        });
         show('pip', !!document.pictureInPictureEnabled);
         $('download').href = base + 'items/' + entry.item.Id + '/stream';
         show('download', info.Download);
@@ -662,6 +677,15 @@
     }
     $('ends').textContent = d ? 'Fin à ' + new Date(Date.now() + (d - pos) * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
     player.classList.toggle('show-next', !!queue[play.index + 1] && d > 0 && d - pos < 30);
+    var seg = play.info.Segments.filter(function (s) { return pos >= s.Start && pos < s.End - 2; })[0];
+    show('skip', !!seg && $('menu').hidden);
+    if (seg) { $('skip').textContent = seg.Type === 'Recap' ? 'Passer le récap' : 'Passer l\'intro'; play.skipTo = seg.End; }
+  }
+
+  function chapterAt(t) {
+    var name = '';
+    play.info.Chapters.forEach(function (c) { if (c.Start <= t && c.Name) name = c.Name; });
+    return name;
   }
 
   function togglePlay() { if (video.paused) video.play().catch(noop); else video.pause(); }
@@ -758,7 +782,8 @@
   seek.addEventListener('pointermove', function (e) {
     if (e.pointerType !== 'mouse' || !play) return;
     var r = seek.getBoundingClientRect(), x = Math.min(Math.max(e.clientX - r.left, 0), r.width);
-    $('tip').textContent = clock(x / r.width * play.info.DurationSeconds);
+    var t = x / r.width * play.info.DurationSeconds, chapter = chapterAt(t);
+    $('tip').textContent = clock(t) + (chapter ? ' · ' + chapter : '');
     $('tip').style.left = x + 'px';
     show('tip', true);
   });
@@ -769,6 +794,7 @@
   $('back10').addEventListener('click', function () { seekTo(position() - 10); });
   $('fwd10').addEventListener('click', function () { seekTo(position() + 10); });
   $('next').addEventListener('click', function () { openPlayer(play.index + 1, false); });
+  $('skip').addEventListener('click', function () { if (play && play.skipTo) seekTo(play.skipTo); });
   $('upNext').addEventListener('click', function () { openPlayer(play.index + 1, false); });
   $('close').addEventListener('click', closePlayer);
   $('fs').addEventListener('click', fullscreen);
