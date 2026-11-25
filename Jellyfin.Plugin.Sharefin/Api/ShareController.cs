@@ -185,7 +185,8 @@ public class ShareController : ControllerBase
 
     /// <summary>
     /// Gets the shared content: the item, and its seasons and episodes for a series or season.
-    /// Counts one access and, for a permanent link, renews the remembered password.
+    /// Counts one access per browser session (not per reload, which would rewrite the store each time)
+    /// and, for a permanent link, renews the remembered password.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <returns>The content tree.</returns>
@@ -201,11 +202,17 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        _store.Update(access.Link.Id, l =>
+        var visit = ShareCookie.CookieName(access.Link.Token) + "v";
+        if (!Request.Cookies.ContainsKey(visit))
         {
-            l.AccessCount++;
-            l.LastAccessUtc = DateTime.UtcNow;
-        });
+            _store.Update(access.Link.Id, l =>
+            {
+                l.AccessCount++;
+                l.LastAccessUtc = DateTime.UtcNow;
+            });
+            Response.Cookies.Append(visit, "1", CookieOptionsFor(access.Link, null)); // no expiry: gone when the browser closes
+        }
+
         if (access.Link.ExpiresUtc is null)
         {
             IssueCookie(access.Link);
@@ -579,16 +586,18 @@ public class ShareController : ControllerBase
     {
         var now = DateTimeOffset.UtcNow;
         var expires = ShareCookie.ExpiryFor(link, Settings.RememberDays, now);
-        Response.Cookies.Append(ShareCookie.CookieName(link.Token), _cookie.Issue(link, expires, now), new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = Request.IsHttps, // browsers drop Secure cookies set over plain http, which made login loop
-            SameSite = SameSiteMode.Lax,
-            IsEssential = true,
-            Path = Request.PathBase + "/Sharefin/s/" + link.Token,
-            Expires = expires,
-        });
+        Response.Cookies.Append(ShareCookie.CookieName(link.Token), _cookie.Issue(link, expires, now), CookieOptionsFor(link, expires));
     }
+
+    private CookieOptions CookieOptionsFor(ShareLink link, DateTimeOffset? expires) => new()
+    {
+        HttpOnly = true,
+        Secure = Request.IsHttps, // browsers drop Secure cookies set over plain http, which made login loop
+        SameSite = SameSiteMode.Lax,
+        IsEssential = true,
+        Path = Request.PathBase + "/Sharefin/s/" + link.Token,
+        Expires = expires,
+    };
 
     private ObjectResult TooMany(TimeSpan wait)
     {
