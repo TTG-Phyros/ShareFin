@@ -37,6 +37,10 @@ public sealed class ShareTranscoder
         [480] = 1_500_000,
     };
 
+    // Jellyfin checks a marker file in the transcode folder on each GetTranscodePath call:
+    // two streams starting at the same moment failed on it with a sharing violation (500).
+    private static readonly Lock TranscodePathGate = new();
+
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly ITranscodeManager _transcodeManager;
     private readonly EncodingHelper _encodingHelper;
@@ -118,7 +122,13 @@ public sealed class ShareTranscoder
             state.OutputVideoBitrate = _encodingHelper.GetVideoBitrateParamValue(request, state.VideoStream, "h264");
 
             // Unique file per request, so a seek never picks up the output of an earlier position.
-            state.OutputFilePath = Path.Combine(_config.GetTranscodePath(), "sharefin-" + playSessionId + ".mp4");
+            string transcodePath;
+            lock (TranscodePathGate)
+            {
+                transcodePath = _config.GetTranscodePath();
+            }
+
+            state.OutputFilePath = Path.Combine(transcodePath, "sharefin-" + playSessionId + ".mp4");
             var args = _encodingHelper.GetProgressiveVideoFullCommandLine(state, options, EncoderPreset.superfast);
 
 #pragma warning disable CA2000 // The transcoding job owns and disposes this source, as in Jellyfin's own controllers.
