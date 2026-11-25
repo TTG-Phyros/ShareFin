@@ -141,7 +141,8 @@
   .ends { color:rgba(255,255,255,.75); font-size:.9rem; white-space:nowrap; }
   .osd-bottom { padding:60px max(20px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background:linear-gradient(transparent, rgba(0,0,0,.85)); }
   .timeline { position:relative; }
-  .tip { position:absolute; bottom:24px; transform:translateX(-50%); white-space:nowrap; padding:2px 8px; border-radius:6px; background:rgba(20,20,26,.92); font-size:.8rem; font-variant-numeric:tabular-nums; pointer-events:none; }
+  .tip { position:absolute; bottom:24px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:4px; white-space:nowrap; padding:2px 8px; border-radius:6px; background:rgba(20,20,26,.92); font-size:.8rem; font-variant-numeric:tabular-nums; pointer-events:none; }
+  .tip-img { margin:4px -4px 0; border-radius:4px; background:#000 no-repeat; }
   .marks { position:absolute; left:0; right:0; top:7px; height:4px; pointer-events:none; }
   .marks i { position:absolute; top:0; width:3px; height:4px; margin-left:-1px; background:rgba(0,0,0,.75); }
   .row { display:flex; align-items:center; gap:2px; margin-top:6px; }
@@ -242,7 +243,7 @@
     </div>
     <div class="osd-bottom">
       <div class="timeline">
-        <span id="tip" class="tip" hidden></span>
+        <div id="tip" class="tip" hidden><div id="tipImg" class="tip-img" hidden></div><span id="tipText"></span></div>
         <div id="marks" class="marks" aria-hidden="true"></div>
         <input id="seek" class="range" type="range" min="0" max="0" step="1" value="0" aria-label="Position">
       </div>
@@ -777,16 +778,35 @@
     var d = play ? play.info.DurationSeconds : 0, t = Number(seek.value);
     $('time').textContent = clock(t) + ' / ' + clock(d);
     pct(seek, d ? t / d : 0, null);
+    if (play) tipAt(t); // touch: the preview follows the finger while dragging
   });
-  seek.addEventListener('change', function () { dragging = false; seekTo(Number(seek.value)); });
+  seek.addEventListener('change', function () {
+    dragging = false;
+    if (lastPointer !== 'mouse') show('tip', false);
+    seekTo(Number(seek.value));
+  });
   seek.addEventListener('pointermove', function (e) {
     if (e.pointerType !== 'mouse' || !play) return;
-    var r = seek.getBoundingClientRect(), x = Math.min(Math.max(e.clientX - r.left, 0), r.width);
-    var t = x / r.width * play.info.DurationSeconds, chapter = chapterAt(t);
-    $('tip').textContent = clock(t) + (chapter ? ' · ' + chapter : '');
-    $('tip').style.left = x + 'px';
-    show('tip', true);
+    var r = seek.getBoundingClientRect();
+    tipAt(Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width * play.info.DurationSeconds);
   });
+
+  // Time and chapter above the timeline, with the matching thumbnail when Jellyfin generated trickplay tiles.
+  function tipAt(t) {
+    var d = play.info.DurationSeconds, w = seek.getBoundingClientRect().width, tp = play.info.Trickplay, chapter = chapterAt(t), half = 40;
+    $('tipText').textContent = clock(t) + (chapter ? ' · ' + chapter : '');
+    show('tipImg', !!tp);
+    if (tp) {
+      var n = Math.max(0, Math.min(tp.ThumbnailCount - 1, Math.floor(t * 1000 / tp.Interval))), per = tp.TileWidth * tp.TileHeight, k = n % per, box = $('tipImg').style;
+      box.width = tp.Width + 'px';
+      box.height = tp.Height + 'px';
+      box.backgroundImage = 'url("' + base + 'items/' + play.id + '/trickplay/' + tp.Width + '/' + Math.floor(n / per) + '.jpg")';
+      box.backgroundPosition = -(k % tp.TileWidth) * tp.Width + 'px ' + -Math.floor(k / tp.TileWidth) * tp.Height + 'px';
+      half = tp.Width / 2 + 8;
+    }
+    $('tip').style.left = Math.min(Math.max(d ? t / d * w : 0, half), Math.max(half, w - half)) + 'px'; // stays on screen at both ends
+    show('tip', true);
+  }
   seek.addEventListener('pointerleave', function () { show('tip', false); });
 
   $('playPause').addEventListener('click', togglePlay);
