@@ -20,17 +20,14 @@ namespace Jellyfin.Plugin.Sharefin.Streaming;
 /// without any user: the job runs with an empty user id, which skips per-user permission checks.
 /// Video and audio are either copied (remux) or encoded to H.264/AAC, as the browser says it needs.
 /// </summary>
-public sealed class ShareTranscoder
+internal sealed class ShareTranscoder : IPlaybackJobs
 {
-    /// <summary>The default maximum height.</summary>
-    public const int DefaultHeight = 1080;
-
     private const int MaxAudioChannels = 2;
 
     /// <summary>
     /// Qualities the viewer can pick: maximum height to maximum video bitrate. 1080 is the default.
     /// </summary>
-    public static readonly IReadOnlyDictionary<int, int> Bitrates = new Dictionary<int, int>
+    internal static readonly IReadOnlyDictionary<int, int> Bitrates = new Dictionary<int, int>
     {
         [1080] = 20_000_000,
         [720] = 4_000_000,
@@ -61,26 +58,11 @@ public sealed class ShareTranscoder
         _config = config;
     }
 
-    /// <summary>
-    /// Stops any job running for a device, then starts a new one.
-    /// </summary>
-    /// <param name="item">The video to play.</param>
-    /// <param name="source">Its media source.</param>
-    /// <param name="deviceId">One job per device id: a new request (a seek) stops the previous one.</param>
-    /// <param name="playSessionId">Unique id of this job, to stop it with <see cref="StopAsync"/>.</param>
-    /// <param name="startTicks">Start position.</param>
-    /// <param name="audioStreamIndex">Audio stream to use, or null for the default one.</param>
-    /// <param name="maxHeight">Maximum height, a key of <see cref="Bitrates"/>; only applies when the video is encoded.</param>
-    /// <param name="copyVideo">Whether the browser can play the source video codec.</param>
-    /// <param name="copyAudio">Whether the browser can play the source audio codec.</param>
-    /// <param name="userAgent">Client user agent, for Jellyfin's job bookkeeping.</param>
-    /// <returns>A stream following the growing output file.</returns>
-    public async Task<Stream> StartAsync(BaseItem item, MediaSourceInfo source, string deviceId, string playSessionId, long startTicks, int? audioStreamIndex, int maxHeight, bool copyVideo, bool copyAudio, string? userAgent)
+    /// <inheritdoc />
+    public async Task<Stream> StartAsync(PlaybackJob job)
     {
-        ArgumentNullException.ThrowIfNull(item);
-        ArgumentNullException.ThrowIfNull(source);
-
-        await _transcodeManager.KillTranscodingJobs(deviceId, null, _ => true).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(job);
+        var (item, source, deviceId, playSessionId, startTicks, audioStreamIndex, maxHeight, copyVideo, copyAudio, userAgent) = job;
 
         var request = new VideoRequestDto
         {
@@ -132,9 +114,9 @@ public sealed class ShareTranscoder
             var args = _encodingHelper.GetProgressiveVideoFullCommandLine(state, options, EncoderPreset.superfast);
 
 #pragma warning disable CA2000 // The transcoding job owns and disposes this source, as in Jellyfin's own controllers.
-            var job = await _transcodeManager.StartFfMpeg(state, state.OutputFilePath, args, Guid.Empty, TranscodingJobType.Progressive, new CancellationTokenSource()).ConfigureAwait(false);
+            var ffmpeg = await _transcodeManager.StartFfMpeg(state, state.OutputFilePath, args, Guid.Empty, TranscodingJobType.Progressive, new CancellationTokenSource()).ConfigureAwait(false);
 #pragma warning restore CA2000
-            return new ProgressiveFileStream(state.OutputFilePath, job, _transcodeManager);
+            return new ProgressiveFileStream(state.OutputFilePath, ffmpeg, _transcodeManager);
         }
         catch
         {
@@ -143,11 +125,14 @@ public sealed class ShareTranscoder
         }
     }
 
+    /// <inheritdoc />
+    public Task StopViewerAsync(string viewerId) => _transcodeManager.KillTranscodingJobs(viewerId, null, _ => true);
+
     /// <summary>
     /// Stops a job if still running and deletes its output file. Jellyfin only deletes the file
     /// when it kills a job, never when ffmpeg finishes on its own, so this runs after every response.
     /// </summary>
-    /// <param name="playSessionId">The job id given to <see cref="StartAsync"/>.</param>
+    /// <param name="playSessionId">The job id.</param>
     /// <returns>A task.</returns>
-    public Task StopAsync(string playSessionId) => _transcodeManager.KillTranscodingJobs(string.Empty, playSessionId, _ => true);
+    public Task StopSessionAsync(string playSessionId) => _transcodeManager.KillTranscodingJobs(string.Empty, playSessionId, _ => true);
 }

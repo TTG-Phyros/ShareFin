@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.Sharefin.Streaming;
 /// <remarks>
 /// shortcut: in memory, so counts reset when Jellyfin restarts, along with the jobs themselves.
 /// </remarks>
-public sealed class StreamLimiter
+internal sealed class StreamLimiter
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<Guid, Dictionary<string, int>> _active = [];

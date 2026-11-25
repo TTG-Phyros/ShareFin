@@ -1,8 +1,12 @@
+using Jellyfin.Plugin.Sharefin.Configuration;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
 using Jellyfin.Plugin.Sharefin.Web;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,8 +23,13 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ShareLinkStore>();
         serviceCollection.AddSingleton<ShareCookie>();
         serviceCollection.AddSingleton<LoginThrottle>();
-        serviceCollection.AddSingleton<ShareTranscoder>();
-        serviceCollection.AddSingleton<StreamLimiter>();
+        serviceCollection.AddSingleton(services => new SharePlayback(
+            new ShareTranscoder(
+                services.GetRequiredService<IMediaSourceManager>(),
+                services.GetRequiredService<ITranscodeManager>(),
+                services.GetRequiredService<EncodingHelper>(),
+                services.GetRequiredService<IServerConfigurationManager>()),
+            () => Plugin.Instance?.Configuration ?? new PluginConfiguration()));
         serviceCollection.AddHostedService<WebInjection>();
     }
 }

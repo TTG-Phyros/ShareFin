@@ -146,6 +146,7 @@ Jellyfin.Plugin.Sharefin/
   Api/ShareController.cs      endpoints publics /Sharefin/s/{token}/...
   Security/                   mot de passe, cookie, anti brute-force, confinement
   Storage/ShareLinkStore.cs   stockage JSON
+  Streaming/SharePlayback.cs  lectures : créneaux par lien, un job ffmpeg par spectateur
   Streaming/ShareTranscoder.cs  remux/transcodage via ITranscodeManager
   Configuration/configPage.html page du tableau de bord
   Web/share.html              page publique et lecteur

@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Database.Implementations.Enums;
@@ -58,8 +57,7 @@ public class ShareController : ControllerBase
     private readonly ShareLinkStore _store;
     private readonly ShareCookie _cookie;
     private readonly LoginThrottle _throttle;
-    private readonly ShareTranscoder _transcoder;
-    private readonly StreamLimiter _limiter;
+    private readonly SharePlayback _playback;
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
     private readonly IImageProcessor _imageProcessor;
@@ -76,8 +74,7 @@ public class ShareController : ControllerBase
     /// <param name="store">The link store.</param>
     /// <param name="cookie">The access cookie service.</param>
     /// <param name="throttle">The password attempt limiter.</param>
-    /// <param name="transcoder">The transcoder.</param>
-    /// <param name="limiter">The per-link stream counter.</param>
+    /// <param name="playback">The playbacks through ffmpeg.</param>
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="mediaSourceManager">The media source manager.</param>
     /// <param name="imageProcessor">The image processor.</param>
@@ -91,8 +88,7 @@ public class ShareController : ControllerBase
         ShareLinkStore store,
         ShareCookie cookie,
         LoginThrottle throttle,
-        ShareTranscoder transcoder,
-        StreamLimiter limiter,
+        SharePlayback playback,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
         IImageProcessor imageProcessor,
@@ -106,8 +102,7 @@ public class ShareController : ControllerBase
         _store = store;
         _cookie = cookie;
         _throttle = throttle;
-        _transcoder = transcoder;
-        _limiter = limiter;
+        _playback = playback;
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
         _imageProcessor = imageProcessor;
@@ -124,9 +119,11 @@ public class ShareController : ControllerBase
         get
         {
             var c = Plugin.Instance?.Configuration;
-            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.MaxStreamsPerLink ?? 3, c?.AllowDownload ?? true);
+            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.AllowDownload ?? true);
         }
     }
+
+    private string ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     /// <summary>
     /// Serves the share page. The page itself asks for the password or shows the content.
@@ -180,7 +177,7 @@ public class ShareController : ControllerBase
             return NotFound();
         }
 
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var ip = ClientIp;
         if (_throttle.RetryAfter(link.Token, ip) is { } wait)
         {
             return TooMany(wait);
@@ -261,7 +258,7 @@ public class ShareController : ControllerBase
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
-    /// <param name="sid">The viewer's random session id, see <see cref="Transcode"/>.</param>
+    /// <param name="sid">The viewer's random session id, see <see cref="Viewer.TryCreate"/>.</param>
     /// <returns>Container, codecs, audio and text subtitle tracks, intro and recap segments, chapters, trickplay thumbnails, and whether the link has no stream slot left for this viewer.</returns>
     [HttpGet("items/{itemId}/playback")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -275,7 +272,8 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        if (!IsValidSession(sid))
+        var viewer = Viewer.TryCreate(access.Link, ClientIp, sid);
+        if (viewer is null)
         {
             return BadRequest();
         }
@@ -310,7 +308,7 @@ public class ShareController : ControllerBase
             Segments = segments.Select(s => new { Type = s.Type.ToString(), Start = s.StartTicks / (double)TicksPerSecond, End = s.EndTicks / (double)TicksPerSecond }),
             Chapters = _chapterManager.GetChapters(access.Item.Id).Select(c => new { c.Name, Start = c.StartPositionTicks / (double)TicksPerSecond }),
             Trickplay = trickplay is null ? null : new { trickplay.Width, trickplay.Height, trickplay.TileWidth, trickplay.TileHeight, trickplay.ThumbnailCount, trickplay.Interval },
-            StreamsBusy = _limiter.IsFull(access.Link.Id, DeviceId(access.Link, sid), Settings.MaxStreamsPerLink),
+            StreamsBusy = _playback.IsBusy(viewer),
         });
     }
 
@@ -384,31 +382,27 @@ public class ShareController : ControllerBase
             return NotFound();
         }
 
-        if (!IsValidSession(sid) || (height is not null && !ShareTranscoder.Bitrates.ContainsKey(height.Value)) || (audio is not null && source.MediaStreams?.Any(s => s.Type == MediaStreamType.Audio && s.Index == audio) != true))
+        var viewer = Viewer.TryCreate(access.Link, ClientIp, sid);
+        if (viewer is null)
         {
             return BadRequest();
         }
 
-        var linkId = access.Link.Id;
-        var deviceId = DeviceId(access.Link, sid);
-        if (!_limiter.TryEnter(linkId, deviceId, Settings.MaxStreamsPerLink))
+        var start = await _playback.StartAsync(viewer, access.Item, source, new PlaybackRequest(t, audio, vcopy, acopy, height, Request.Headers.UserAgent.ToString())).ConfigureAwait(false);
+        switch (start.Status)
         {
-            _logger.LogInformation("Sharefin: stream refused for link {LinkId}, too many viewers", linkId);
-            return StatusCode(StatusCodes.Status429TooManyRequests);
+            case PlaybackStatus.Invalid:
+                return BadRequest();
+            case PlaybackStatus.Busy:
+                _logger.LogInformation("Sharefin: stream refused for link {LinkId}, too many viewers", access.Link.Id);
+                return StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
-        var startTicks = (long)(Math.Clamp(t, 0, 7 * 24 * 3600) * TicksPerSecond);
-        var playSessionId = Guid.NewGuid().ToString("N");
-        // Registered before starting, so the slot is released even if ffmpeg fails to start; also runs when the browser disconnects.
-        Response.OnCompleted(() =>
-        {
-            _limiter.Leave(linkId, deviceId);
-            return _transcoder.StopAsync(playSessionId);
-        });
-        var stream = await _transcoder.StartAsync(access.Item, source, deviceId, playSessionId, startTicks, audio, height ?? ShareTranscoder.DefaultHeight, vcopy && height is null, acopy, Request.Headers.UserAgent.ToString()).ConfigureAwait(false);
+        // Disposed when the request ends, including when the browser disconnects: frees the slot and stops ffmpeg.
+        Response.RegisterForDisposeAsync(start.Playback!);
         Response.Headers.CacheControl = "private, no-store";
         Response.Headers.AcceptRanges = "none";
-        return File(stream, "video/mp4");
+        return File(start.Playback!.Stream, "video/mp4");
     }
 
     /// <summary>
@@ -645,18 +639,6 @@ public class ShareController : ControllerBase
             .FirstOrDefault(s => s.Protocol == MediaProtocol.File && !string.IsNullOrEmpty(s.Path));
     }
 
-    /// <summary>
-    /// The transcode device id of the caller: one ffmpeg job, and one stream slot, per link and viewer.
-    /// The address stays in the hash, so knowing someone's session id is not enough to stop their stream.
-    /// </summary>
-    private string DeviceId(ShareLink link, string? sid)
-    {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return "sharefin-" + link.Id.ToString("N") + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ip + "|" + sid)).AsSpan(0, 8));
-    }
-
-    private static bool IsValidSession(string? sid) => sid is null || (sid.Length is > 0 and <= 64 && sid.All(char.IsAsciiLetterOrDigit));
-
     private void IssueCookie(ShareLink link)
     {
         var now = DateTimeOffset.UtcNow;
@@ -687,5 +669,5 @@ public class ShareController : ControllerBase
 
     private sealed record SeasonView(string Id, string Name, int? Index, List<object> Episodes);
 
-    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, int MaxStreamsPerLink, bool AllowDownload);
+    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, bool AllowDownload);
 }
