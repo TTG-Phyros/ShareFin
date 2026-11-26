@@ -23,3 +23,7 @@ _À éviter_ : session, job, transcodage
 **Gardien** (`ShareGate`) :
 Le seul endroit qui décide si un visiteur passe un lien de partage : lien utilisable, mot de passe juste, essais limités, accès encore valable, élément compris dans le partage. Il répond accordé, refusé, bloqué ou introuvable.
 _À éviter_ : autorisation, auth
+
+**Séance** (`WatchParties`) :
+Des spectateurs d'un même lien de partage qui regardent la même vidéo en même temps, réunis par un lien d'invitation. Lecture, pause, position et vidéo y sont communes ; volume, audio, sous-titres et qualité restent à chacun. Chaque spectateur d'une séance garde sa propre lecture partagée.
+_À éviter_ : party, salle, room, watch party

@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Sharefin.Content;
 using Jellyfin.Plugin.Sharefin.Model;
+using Jellyfin.Plugin.Sharefin.Party;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
@@ -49,6 +50,7 @@ public class ShareController : ControllerBase
     private readonly ShareGate _gate;
     private readonly SharePlayback _playback;
     private readonly ShareContent _content;
+    private readonly WatchParties _parties;
     private readonly IImageProcessor _imageProcessor;
     private readonly ISubtitleEncoder _subtitleEncoder;
     private readonly IServerConfigurationManager _configurationManager;
@@ -62,6 +64,7 @@ public class ShareController : ControllerBase
     /// <param name="gate">The access checks.</param>
     /// <param name="playback">The playbacks through ffmpeg.</param>
     /// <param name="content">What the page shows of the shared items.</param>
+    /// <param name="parties">The séances.</param>
     /// <param name="imageProcessor">The image processor.</param>
     /// <param name="subtitleEncoder">The subtitle encoder.</param>
     /// <param name="configurationManager">The server configuration, for the custom CSS theme.</param>
@@ -72,6 +75,7 @@ public class ShareController : ControllerBase
         ShareGate gate,
         SharePlayback playback,
         ShareContent content,
+        WatchParties parties,
         IImageProcessor imageProcessor,
         ISubtitleEncoder subtitleEncoder,
         IServerConfigurationManager configurationManager,
@@ -82,6 +86,7 @@ public class ShareController : ControllerBase
         _gate = gate;
         _playback = playback;
         _content = content;
+        _parties = parties;
         _imageProcessor = imageProcessor;
         _subtitleEncoder = subtitleEncoder;
         _configurationManager = configurationManager;
@@ -417,6 +422,100 @@ public class ShareController : ControllerBase
         }).ConfigureAwait(false);
         Response.Headers.CacheControl = "private, max-age=3600";
         return PhysicalFile(path, mime ?? "image/jpeg");
+    }
+
+    /// <summary>
+    /// Opens a séance on the link: viewers who open its invitation watch together.
+    /// </summary>
+    /// <param name="token">The link token.</param>
+    /// <param name="sid">The viewer's random session id.</param>
+    /// <returns>The séance, or 429 when the link already has too many.</returns>
+    [HttpPost("party")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public ActionResult CreateParty([FromRoute] string token, [FromQuery] string? sid = null)
+    {
+        NoStore();
+        if (!TryAuthorize(token, null, out var access, out var error))
+        {
+            return error;
+        }
+
+        if (Viewer.TryCreate(access.Link, ClientIp, sid) is not { } viewer)
+        {
+            return BadRequest();
+        }
+
+        var state = _parties.Create(access.Link.Id, viewer.Id);
+        return state is null ? StatusCode(StatusCodes.Status429TooManyRequests) : Ok(state);
+    }
+
+    /// <summary>
+    /// Gets a séance once it changes after version <paramref name="v"/>, or after 25 s (a long poll, which goes through any proxy).
+    /// </summary>
+    /// <param name="token">The link token.</param>
+    /// <param name="id">The séance.</param>
+    /// <param name="v">The last version the viewer has, -1 for none.</param>
+    /// <param name="sid">The viewer's random session id.</param>
+    /// <returns>The state, or 404 when the séance is gone.</returns>
+    [HttpGet("party/{id}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> GetParty([FromRoute] string token, [FromRoute] string id, [FromQuery] long v = -1, [FromQuery] string? sid = null)
+    {
+        NoStore();
+        if (!TryAuthorize(token, null, out var access, out var error))
+        {
+            return error;
+        }
+
+        if (Viewer.TryCreate(access.Link, ClientIp, sid) is not { } viewer)
+        {
+            return BadRequest();
+        }
+
+        var state = await _parties.WaitAsync(access.Link.Id, id, viewer.Id, v, TimeSpan.FromSeconds(25), HttpContext.RequestAborted).ConfigureAwait(false);
+        return state is null ? NotFound() : Ok(state);
+    }
+
+    /// <summary>
+    /// Plays, pauses, seeks or changes the video for everyone in a séance.
+    /// </summary>
+    /// <param name="token">The link token.</param>
+    /// <param name="id">The séance.</param>
+    /// <param name="request">What changes.</param>
+    /// <param name="sid">The viewer's random session id.</param>
+    /// <returns>The new state, or 404 when the séance is gone or the video is outside the link.</returns>
+    [HttpPost("party/{id}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public ActionResult UpdateParty([FromRoute] string token, [FromRoute] string id, [FromBody] PartyRequest request, [FromQuery] string? sid = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        NoStore();
+        if (request.Position is { } p && !(double.IsFinite(p) && p is >= 0 and < 1e6))
+        {
+            return BadRequest();
+        }
+
+        // With an item, the gate also checks it belongs to the link.
+        if (!TryAuthorize(token, request.ItemId, out var access, out var error))
+        {
+            return error;
+        }
+
+        if (Viewer.TryCreate(access.Link, ClientIp, sid) is not { } viewer)
+        {
+            return BadRequest();
+        }
+
+        var state = _parties.Update(access.Link.Id, id, viewer.Id, request.ItemId, request.Paused, request.Position);
+        return state is null ? NotFound() : Ok(state);
     }
 
     /// <summary>

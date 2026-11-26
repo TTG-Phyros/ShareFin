@@ -69,3 +69,16 @@ public class ExpiryRequest
     /// <summary>Gets or sets the new expiry date, or null for a permanent link.</summary>
     public DateTime? ExpiresUtc { get; set; }
 }
+
+/// <summary>Request body to change a séance. Left out values stay as they are.</summary>
+public class PartyRequest
+{
+    /// <summary>Gets or sets the new video.</summary>
+    public Guid? ItemId { get; set; }
+
+    /// <summary>Gets or sets whether to pause or play.</summary>
+    public bool? Paused { get; set; }
+
+    /// <summary>Gets or sets the new position in seconds.</summary>
+    public double? Position { get; set; }
+}
