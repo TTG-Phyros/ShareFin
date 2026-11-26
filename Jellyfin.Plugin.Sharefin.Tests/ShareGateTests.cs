@@ -57,7 +57,8 @@ public sealed class ShareGateTests : IDisposable
 
     private ShareLink Share(BaseItem item, DateTime? expires = null)
     {
-        var link = new ShareLink { Id = Guid.NewGuid(), Token = SharePassword.NewToken(), ItemId = item.Id, ExpiresUtc = expires, PasswordHash = SharePassword.Hash(Password), Stamp = SharePassword.NewToken(16) };
+        var link = new ShareLink { Id = Guid.NewGuid(), Token = SharePassword.NewToken(), ItemId = item.Id, ExpiresUtc = expires };
+        link.SetPassword(SharePassword.Hash(Password));
         _store.Add(link);
         return link;
     }
@@ -122,7 +123,7 @@ public sealed class ShareGateTests : IDisposable
         var expired = Share(_series, DateTime.UtcNow.AddSeconds(-1));
         var revoked = Share(_series);
         var cookie = LogIn(revoked);
-        _store.Update(revoked.Id, l => l.RevokedUtc = DateTime.UtcNow);
+        _store.Update(revoked.Id, l => l.Revoke(DateTime.UtcNow));
 
         foreach (var token in new[] { "nope", expired.Token, revoked.Token })
         {
@@ -146,11 +147,7 @@ public sealed class ShareGateTests : IDisposable
     {
         var link = Share(_series);
         var cookie = LogIn(link);
-        _store.Update(link.Id, l =>
-        {
-            l.PasswordHash = SharePassword.Hash("new password");
-            l.Stamp = SharePassword.NewToken(16); // what AdminController does
-        });
+        _store.Update(link.Id, l => l.SetPassword(SharePassword.Hash("new password")));
 
         Assert.Equal(ShareAccessStatus.Refused, _gate.Authorize(link.Token, cookie, null, out _));
         Assert.Equal(ShareAccessStatus.Refused, _gate.Login(link.Token, Password, Ip).Status);

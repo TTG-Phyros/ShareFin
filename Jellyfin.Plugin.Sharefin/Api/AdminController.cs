@@ -84,11 +84,10 @@ public class AdminController : ControllerBase
             ItemId = item.Id,
             ItemName = item.Name,
             ItemType = item.GetBaseItemKind().ToString(),
-            PasswordHash = SharePassword.Hash(request.Password!),
-            Stamp = SharePassword.NewToken(16),
             CreatedUtc = now,
             ExpiresUtc = expires,
         };
+        link.SetPassword(SharePassword.Hash(request.Password!));
         _store.Add(link);
         return LinkDto.From(link, now, true);
     }
@@ -103,13 +102,7 @@ public class AdminController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult Revoke([FromRoute] Guid id)
     {
-        return _store.Update(id, l =>
-        {
-            l.RevokedUtc ??= DateTime.UtcNow;
-            l.Stamp = SharePassword.NewToken(16);
-        })
-            ? NoContent()
-            : NotFound();
+        return _store.Update(id, l => l.Revoke(DateTime.UtcNow)) ? NoContent() : NotFound();
     }
 
     /// <summary>
@@ -131,13 +124,7 @@ public class AdminController : ControllerBase
         }
 
         var hash = SharePassword.Hash(request.Password!);
-        return _store.Update(id, l =>
-        {
-            l.PasswordHash = hash;
-            l.Stamp = SharePassword.NewToken(16);
-        })
-            ? NoContent()
-            : NotFound();
+        return _store.Update(id, l => l.SetPassword(hash)) ? NoContent() : NotFound();
     }
 
     /// <summary>

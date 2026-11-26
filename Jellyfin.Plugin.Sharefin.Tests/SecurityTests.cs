@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
@@ -76,19 +78,48 @@ public class LinkStateTests
     public void ExpiryAtNowIsInactive() => Assert.False(new ShareLink { ExpiresUtc = Now }.IsActive(Now));
 
     [Fact]
-    public void RevokedLinkIsInactive() => Assert.False(new ShareLink { RevokedUtc = Now.AddDays(-1) }.IsActive(Now));
+    public void RevokedLinkIsInactive()
+    {
+        var link = new ShareLink();
+        link.Revoke(Now.AddDays(-1));
+        Assert.False(link.IsActive(Now));
+    }
+
+    [Fact]
+    public void PasswordChangeAndRevocationRenewTheStamp()
+    {
+        var link = new ShareLink();
+        var stamps = new HashSet<string>();
+        link.SetPassword(SharePassword.Hash("secret123"));
+        stamps.Add(link.Stamp);
+        link.SetPassword(SharePassword.Hash("other123"));
+        stamps.Add(link.Stamp);
+        link.Revoke(Now);
+        stamps.Add(link.Stamp);
+        Assert.Equal(3, stamps.Count);
+        Assert.DoesNotContain(string.Empty, stamps);
+    }
+
+    [Fact]
+    public void RevokingAgainKeepsTheFirstDate()
+    {
+        var link = new ShareLink();
+        link.Revoke(Now);
+        link.Revoke(Now.AddDays(1));
+        Assert.Equal(Now, link.RevokedUtc);
+    }
 }
 
 public class CookieTests
 {
     private readonly ShareCookie _cookie = new(new EphemeralDataProtectionProvider());
 
-    private static ShareLink NewLink() => new()
+    private static ShareLink NewLink()
     {
-        Id = Guid.NewGuid(),
-        Token = SharePassword.NewToken(),
-        Stamp = SharePassword.NewToken(16),
-    };
+        var link = new ShareLink { Id = Guid.NewGuid(), Token = SharePassword.NewToken() };
+        link.SetPassword("hash");
+        return link;
+    }
 
     private string IssueFor(ShareLink link) => _cookie.Issue(link, DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow);
 
@@ -104,7 +135,7 @@ public class CookieTests
     {
         var link = NewLink();
         var value = IssueFor(link);
-        link.Stamp = SharePassword.NewToken(16); // what AdminController does on password change and revoke
+        link.SetPassword("other hash");
         Assert.False(_cookie.Validate(value, link));
     }
 
@@ -112,8 +143,8 @@ public class CookieTests
     public void CookieOfAnotherLinkIsRejected()
     {
         var a = NewLink();
-        var b = NewLink();
-        b.Stamp = a.Stamp;
+        var b = JsonSerializer.Deserialize<ShareLink>(JsonSerializer.Serialize(a))!; // same stamp, other id
+        b.Id = Guid.NewGuid();
         Assert.False(_cookie.Validate(IssueFor(a), b));
     }
 
@@ -322,13 +353,16 @@ public sealed class StoreTests : IDisposable
     public void LinksSurviveReload()
     {
         var store = new ShareLinkStore(_dir);
-        var link = new ShareLink { Id = Guid.NewGuid(), Token = "abc", PasswordHash = SharePassword.Hash("secret123"), Stamp = "s1" };
+        var link = new ShareLink { Id = Guid.NewGuid(), Token = "abc" };
+        link.SetPassword(SharePassword.Hash("old12345"));
         store.Add(link);
-        Assert.True(store.Update(link.Id, l => l.Stamp = "s2"));
+        Assert.True(store.Update(link.Id, l => l.SetPassword(SharePassword.Hash("secret123"))));
+        Assert.True(store.Update(link.Id, l => l.Revoke(DateTime.UtcNow)));
 
         var reloaded = new ShareLinkStore(_dir).GetByToken("abc");
         Assert.NotNull(reloaded);
-        Assert.Equal("s2", reloaded.Stamp);
+        Assert.Equal(link.Stamp, reloaded.Stamp); // private setters still round-trip through the JSON file
+        Assert.Equal(link.RevokedUtc, reloaded.RevokedUtc);
         Assert.True(SharePassword.Verify("secret123", reloaded.PasswordHash));
     }
 
