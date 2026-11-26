@@ -301,15 +301,15 @@ public class ThrottleTests
         Fail("t", "ip", 4);
         Assert.Null(_throttle.RetryAfter("t", "ip"));
     }
+}
 
-    private sealed class ManualClock : TimeProvider
-    {
-        private DateTimeOffset _now = new(2026, 11, 15, 12, 0, 0, TimeSpan.Zero);
+internal sealed class ManualClock : TimeProvider
+{
+    private DateTimeOffset _now = new(2026, 11, 15, 12, 0, 0, TimeSpan.Zero);
 
-        public override DateTimeOffset GetUtcNow() => _now;
+    public override DateTimeOffset GetUtcNow() => _now;
 
-        public void Advance(TimeSpan by) => _now += by;
-    }
+    public void Advance(TimeSpan by) => _now += by;
 }
 
 public sealed class StoreTests : IDisposable

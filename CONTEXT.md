@@ -19,3 +19,7 @@ _À éviter_ : stream, flux
 **Lecture partagée** (`ActivePlayback`) :
 Le visionnage d'une vidéo d'un lien de partage par un spectateur, de son démarrage à sa fermeture. Elle occupe un créneau tant qu'elle dure.
 _À éviter_ : session, job, transcodage
+
+**Gardien** (`ShareGate`) :
+Le seul endroit qui décide si un visiteur passe un lien de partage : lien utilisable, mot de passe juste, essais limités, accès encore valable, élément compris dans le partage. Il répond accordé, refusé, bloqué ou introuvable.
+_À éviter_ : autorisation, auth

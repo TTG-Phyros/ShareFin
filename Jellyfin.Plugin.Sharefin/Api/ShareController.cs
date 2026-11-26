@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -56,7 +57,7 @@ public class ShareController : ControllerBase
 
     private readonly ShareLinkStore _store;
     private readonly ShareCookie _cookie;
-    private readonly LoginThrottle _throttle;
+    private readonly ShareGate _gate;
     private readonly SharePlayback _playback;
     private readonly ILibraryManager _libraryManager;
     private readonly IMediaSourceManager _mediaSourceManager;
@@ -73,7 +74,7 @@ public class ShareController : ControllerBase
     /// </summary>
     /// <param name="store">The link store.</param>
     /// <param name="cookie">The access cookie service.</param>
-    /// <param name="throttle">The password attempt limiter.</param>
+    /// <param name="gate">The access checks.</param>
     /// <param name="playback">The playbacks through ffmpeg.</param>
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="mediaSourceManager">The media source manager.</param>
@@ -87,7 +88,7 @@ public class ShareController : ControllerBase
     public ShareController(
         ShareLinkStore store,
         ShareCookie cookie,
-        LoginThrottle throttle,
+        ShareGate gate,
         SharePlayback playback,
         ILibraryManager libraryManager,
         IMediaSourceManager mediaSourceManager,
@@ -101,7 +102,7 @@ public class ShareController : ControllerBase
     {
         _store = store;
         _cookie = cookie;
-        _throttle = throttle;
+        _gate = gate;
         _playback = playback;
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
@@ -119,7 +120,7 @@ public class ShareController : ControllerBase
         get
         {
             var c = Plugin.Instance?.Configuration;
-            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.MaxFailuresPerLink ?? 5, c?.MaxFailuresPerIp ?? 20, c?.AllowDownload ?? true);
+            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.AllowDownload ?? true);
         }
     }
 
@@ -138,7 +139,7 @@ public class ShareController : ControllerBase
         NoStore();
         Response.Headers["Referrer-Policy"] = "no-referrer"; // the token is in the URL
         Response.Headers["X-Content-Type-Options"] = "nosniff";
-        if (ActiveLink(token) is null)
+        if (_gate.Find(token) is null)
         {
             return NotFound();
         }
@@ -171,29 +172,19 @@ public class ShareController : ControllerBase
     {
         ArgumentNullException.ThrowIfNull(request);
         NoStore();
-        var link = ActiveLink(token);
-        if (link is null)
+        var login = _gate.Login(token, request.Password, ClientIp);
+        if (login.IsGranted)
         {
-            return NotFound();
+            IssueCookie(login.Link);
+            return NoContent();
         }
 
-        var ip = ClientIp;
-        if (_throttle.RetryAfter(link.Token, ip) is { } wait)
+        return login.Status switch
         {
-            return TooMany(wait);
-        }
-
-        if (!SharePassword.Verify(request.Password, link.PasswordHash))
-        {
-            var settings = Settings;
-            _throttle.Fail(link.Token, ip, settings.MaxFailuresPerLink, settings.MaxFailuresPerIp);
-            _logger.LogInformation("Sharefin: wrong password for link {LinkId} from {Ip}", link.Id, ip);
-            return _throttle.RetryAfter(link.Token, ip) is { } lockWait ? TooMany(lockWait) : Unauthorized();
-        }
-
-        _throttle.Succeed(link.Token);
-        IssueCookie(link);
-        return NoContent();
+            ShareAccessStatus.Locked => TooMany(login.RetryAfter ?? TimeSpan.Zero),
+            ShareAccessStatus.Refused => Unauthorized(),
+            _ => NotFound(),
+        };
     }
 
     /// <summary>
@@ -586,45 +577,14 @@ public class ShareController : ControllerBase
         return new SeasonView(season.Id.ToString("N"), season.Name, season.IndexNumber, episodes);
     }
 
-    private ShareLink? ActiveLink(string token)
-    {
-        var link = _store.GetByToken(token);
-        return link is not null && link.IsActive(DateTime.UtcNow) ? link : null;
-    }
-
     /// <summary>
-    /// The single access check used by every content and media endpoint.
+    /// Asks the gate, with the link's access cookie, and turns a refusal into the HTTP answer.
     /// </summary>
-    private bool TryAuthorize(string token, Guid? itemId, out ShareAccess access, out ActionResult error)
+    private bool TryAuthorize(string token, Guid? itemId, [NotNullWhen(true)] out ShareAccess? access, out ActionResult error)
     {
-        access = default!;
-        error = NotFound();
-        var link = ActiveLink(token);
-        if (link is null)
-        {
-            return false;
-        }
-
-        if (!_cookie.Validate(Request.Cookies[ShareCookie.CookieName(link.Token)], link))
-        {
-            error = Unauthorized();
-            return false;
-        }
-
-        var root = _libraryManager.GetItemById(link.ItemId);
-        if (root is null)
-        {
-            return false;
-        }
-
-        var item = itemId is null || itemId.Value.Equals(root.Id) ? root : _libraryManager.GetItemById(itemId.Value);
-        if (item is null || !ShareScope.Contains(root, item))
-        {
-            return false;
-        }
-
-        access = new ShareAccess(link, root, item);
-        return true;
+        var status = _gate.Authorize(token, Request.Cookies[ShareCookie.CookieName(token)], itemId, out access);
+        error = status == ShareAccessStatus.Refused ? Unauthorized() : NotFound();
+        return access is not null;
     }
 
     private MediaSourceInfo? LocalSource(BaseItem item)
@@ -665,9 +625,7 @@ public class ShareController : ControllerBase
 
     private void NoStore() => Response.Headers.CacheControl = "no-store";
 
-    private sealed record ShareAccess(ShareLink Link, BaseItem Root, BaseItem Item);
-
     private sealed record SeasonView(string Id, string Name, int? Index, List<object> Episodes);
 
-    private sealed record PluginConfigurationSnapshot(int RememberDays, int MaxFailuresPerLink, int MaxFailuresPerIp, bool AllowDownload);
+    private sealed record PluginConfigurationSnapshot(int RememberDays, bool AllowDownload);
 }

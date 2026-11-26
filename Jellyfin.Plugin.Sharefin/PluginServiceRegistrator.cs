@@ -23,6 +23,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ShareLinkStore>();
         serviceCollection.AddSingleton<ShareCookie>();
         serviceCollection.AddSingleton<LoginThrottle>();
+        serviceCollection.AddSingleton<ShareGate>();
         serviceCollection.AddSingleton(services => new SharePlayback(
             new ShareTranscoder(
                 services.GetRequiredService<IMediaSourceManager>(),
