@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "1.5.0.0",
+        "changelog": "- Ajoute les séances pour regarder ensemble",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/TTG-Phyros/ShareFin/releases/download/v1.5.0/sharefin_1.5.0.0.zip",
+        "checksum": "9b9049051e9657e17dcc4cd1f6f2e7a4",
+        "timestamp": "2026-11-26T17:32:07Z"
+      },
+      {
         "version": "1.4.2.0",
         "changelog": "- Sort les informations de la page de partage dans ShareContent\n- Laisse le lien déconnecter lui-même ses visiteurs\n- Regroupe les vérifications d'accès dans le gardien ShareGate",
         "targetAbi": "12.0.0.0",
