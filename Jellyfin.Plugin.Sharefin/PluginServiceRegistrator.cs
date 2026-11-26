@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.Sharefin.Configuration;
+using Jellyfin.Plugin.Sharefin.Content;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
@@ -24,6 +25,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ShareCookie>();
         serviceCollection.AddSingleton<LoginThrottle>();
         serviceCollection.AddSingleton<ShareGate>();
+        serviceCollection.AddSingleton<ShareContent>();
         serviceCollection.AddSingleton(services => new SharePlayback(
             new ShareTranscoder(
                 services.GetRequiredService<IMediaSourceManager>(),

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -8,26 +7,18 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Database.Implementations.Enums;
+using Jellyfin.Plugin.Sharefin.Content;
 using Jellyfin.Plugin.Sharefin.Model;
 using Jellyfin.Plugin.Sharefin.Security;
 using Jellyfin.Plugin.Sharefin.Storage;
 using Jellyfin.Plugin.Sharefin.Streaming;
-using MediaBrowser.Controller.Chapters;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Drawing;
-using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.TV;
-using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaEncoding;
-using MediaBrowser.Controller.MediaSegments;
-using MediaBrowser.Controller.Trickplay;
 using MediaBrowser.Model.Branding;
 using MediaBrowser.Model.Drawing;
-using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.MediaInfo;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -46,8 +37,6 @@ namespace Jellyfin.Plugin.Sharefin.Api;
 [AllowAnonymous]
 public class ShareController : ControllerBase
 {
-    private const long TicksPerSecond = TimeSpan.TicksPerSecond;
-
     private static readonly Lazy<string> PageTemplate = new(() =>
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Jellyfin.Plugin.Sharefin.Web.share.html")!;
@@ -59,14 +48,10 @@ public class ShareController : ControllerBase
     private readonly ShareCookie _cookie;
     private readonly ShareGate _gate;
     private readonly SharePlayback _playback;
-    private readonly ILibraryManager _libraryManager;
-    private readonly IMediaSourceManager _mediaSourceManager;
+    private readonly ShareContent _content;
     private readonly IImageProcessor _imageProcessor;
     private readonly ISubtitleEncoder _subtitleEncoder;
     private readonly IServerConfigurationManager _configurationManager;
-    private readonly IMediaSegmentManager _segmentManager;
-    private readonly IChapterManager _chapterManager;
-    private readonly ITrickplayManager _trickplayManager;
     private readonly ILogger<ShareController> _logger;
 
     /// <summary>
@@ -76,53 +61,34 @@ public class ShareController : ControllerBase
     /// <param name="cookie">The access cookie service.</param>
     /// <param name="gate">The access checks.</param>
     /// <param name="playback">The playbacks through ffmpeg.</param>
-    /// <param name="libraryManager">The library manager.</param>
-    /// <param name="mediaSourceManager">The media source manager.</param>
+    /// <param name="content">What the page shows of the shared items.</param>
     /// <param name="imageProcessor">The image processor.</param>
     /// <param name="subtitleEncoder">The subtitle encoder.</param>
     /// <param name="configurationManager">The server configuration, for the custom CSS theme.</param>
-    /// <param name="segmentManager">The media segments (intro, recap).</param>
-    /// <param name="chapterManager">The chapters.</param>
-    /// <param name="trickplayManager">The trickplay thumbnails.</param>
     /// <param name="logger">The logger.</param>
     public ShareController(
         ShareLinkStore store,
         ShareCookie cookie,
         ShareGate gate,
         SharePlayback playback,
-        ILibraryManager libraryManager,
-        IMediaSourceManager mediaSourceManager,
+        ShareContent content,
         IImageProcessor imageProcessor,
         ISubtitleEncoder subtitleEncoder,
         IServerConfigurationManager configurationManager,
-        IMediaSegmentManager segmentManager,
-        IChapterManager chapterManager,
-        ITrickplayManager trickplayManager,
         ILogger<ShareController> logger)
     {
         _store = store;
         _cookie = cookie;
         _gate = gate;
         _playback = playback;
-        _libraryManager = libraryManager;
-        _mediaSourceManager = mediaSourceManager;
+        _content = content;
         _imageProcessor = imageProcessor;
         _subtitleEncoder = subtitleEncoder;
         _configurationManager = configurationManager;
-        _segmentManager = segmentManager;
-        _chapterManager = chapterManager;
-        _trickplayManager = trickplayManager;
         _logger = logger;
     }
 
-    private static PluginConfigurationSnapshot Settings
-    {
-        get
-        {
-            var c = Plugin.Instance?.Configuration;
-            return new PluginConfigurationSnapshot(c?.RememberDays ?? 30, c?.AllowDownload ?? true);
-        }
-    }
+    private static int RememberDays => Plugin.Instance?.Configuration.RememberDays ?? 30;
 
     private string ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
@@ -222,29 +188,12 @@ public class ShareController : ControllerBase
             IssueCookie(access.Link);
         }
 
-        var root = access.Root;
-        var seasons = root switch
-        {
-            Series series => series.GetSeasons(null!, new DtoOptions(false))
-                .OfType<Season>()
-                .OrderBy(s => s.IndexNumber ?? int.MaxValue)
-                .Select(s => SeasonDto(s, series))
-                .Where(s => s.Episodes.Count > 0)
-                .ToList(),
-            Season season => [SeasonDto(season, season.Series)],
-            _ => null,
-        };
-
-        return Ok(new
-        {
-            Item = ItemDto(root),
-            Seasons = seasons,
-        });
+        return Ok(ShareContent.Describe(access.Root));
     }
 
     /// <summary>
     /// Gets what the browser needs to choose between direct play and transcoding.
-    /// No file path is returned. Without <see cref="Configuration.PluginConfiguration.AllowDownload"/>,
+    /// No file path is returned. Without <see cref="ShareContent.AllowDownload"/>,
     /// no direct type is given either, so the browser always goes through ffmpeg.
     /// </summary>
     /// <param name="token">The link token.</param>
@@ -269,43 +218,18 @@ public class ShareController : ControllerBase
             return BadRequest();
         }
 
-        var source = LocalSource(access.Item);
+        var source = _content.LocalSource(access.Item);
         if (source is null)
         {
             return NotFound();
         }
 
-        var streams = source.MediaStreams ?? [];
-        var video = streams.FirstOrDefault(s => s.Type == MediaStreamType.Video);
-        var defaultAudio = source.DefaultAudioStreamIndex ?? streams.FirstOrDefault(s => s.Type == MediaStreamType.Audio)?.Index;
-        var download = Settings.AllowDownload;
-        var manifest = await _trickplayManager.GetTrickplayManifest(access.Item).ConfigureAwait(false);
-        var resolutions = (manifest.TryGetValue(source.Id, out var own) ? own : manifest.Values.FirstOrDefault())?.Values;
-        // A hover tooltip: the smallest resolution at least 240 px wide, else the largest there is.
-        var trickplay = resolutions?.Where(r => r.Width >= 240).MinBy(r => r.Width) ?? resolutions?.MaxBy(r => r.Width);
-        var segments = await _segmentManager.GetSegmentsAsync(access.Item, [MediaSegmentType.Intro, MediaSegmentType.Recap], _libraryManager.GetLibraryOptions(access.Item), true).ConfigureAwait(false);
-        return Ok(new
-        {
-            Name = access.Item.Name,
-            DurationSeconds = (source.RunTimeTicks ?? access.Item.RunTimeTicks ?? 0) / (double)TicksPerSecond,
-            DirectMime = download ? DirectMime(source.Path) : null,
-            Download = download,
-            VideoCodec = video?.Codec,
-            DefaultAudioIndex = defaultAudio,
-            Audio = streams.Where(s => s.Type == MediaStreamType.Audio)
-                .Select(s => new { s.Index, s.Codec, s.Channels, Title = s.DisplayTitle ?? s.Language ?? s.Codec }),
-            Subtitles = streams.Where(s => s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream)
-                .Select(s => new { s.Index, s.Language, Title = s.DisplayTitle ?? s.Language ?? s.Index.ToString(CultureInfo.InvariantCulture), s.IsDefault }),
-            Segments = segments.Select(s => new { Type = s.Type.ToString(), Start = s.StartTicks / (double)TicksPerSecond, End = s.EndTicks / (double)TicksPerSecond }),
-            Chapters = _chapterManager.GetChapters(access.Item.Id).Select(c => new { c.Name, Start = c.StartPositionTicks / (double)TicksPerSecond }),
-            Trickplay = trickplay is null ? null : new { trickplay.Width, trickplay.Height, trickplay.TileWidth, trickplay.TileHeight, trickplay.ThumbnailCount, trickplay.Interval },
-            StreamsBusy = _playback.IsBusy(viewer),
-        });
+        return Ok(await _content.PlaybackAsync(access.Item, source, _playback.IsBusy(viewer)).ConfigureAwait(false));
     }
 
     /// <summary>
     /// Streams the original file, with HTTP range support, for direct play and the download button.
-    /// Not found unless <see cref="Configuration.PluginConfiguration.AllowDownload"/>.
+    /// Not found unless <see cref="ShareContent.AllowDownload"/>.
     /// </summary>
     /// <param name="token">The link token.</param>
     /// <param name="itemId">The video.</param>
@@ -322,15 +246,14 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        var source = LocalSource(access.Item);
-        if (!Settings.AllowDownload || source is null || !System.IO.File.Exists(source.Path))
+        if (_content.DownloadFile(access.Item) is not { } file)
         {
             return NotFound();
         }
 
         Response.Headers.CacheControl = "private, no-store";
         // The attachment name only matters to the download button: a <video> ignores Content-Disposition.
-        return PhysicalFile(source.Path, DirectMime(source.Path) ?? "application/octet-stream", DownloadName(access.Item, source.Path), enableRangeProcessing: true);
+        return PhysicalFile(file.Path, file.Mime, file.Name, enableRangeProcessing: true);
     }
 
     /// <summary>
@@ -367,7 +290,7 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        var source = LocalSource(access.Item);
+        var source = _content.LocalSource(access.Item);
         if (source is null)
         {
             return NotFound();
@@ -415,13 +338,13 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        var source = LocalSource(access.Item);
+        var source = _content.LocalSource(access.Item);
         if (source?.MediaStreams?.Any(s => s.Index == index && s.Type == MediaStreamType.Subtitle && s.IsTextSubtitleStream) != true)
         {
             return NotFound();
         }
 
-        var startTicks = (long)(Math.Max(0, t) * TicksPerSecond);
+        var startTicks = (long)(Math.Max(0, t) * TimeSpan.TicksPerSecond);
         var vtt = await _subtitleEncoder.GetSubtitles(access.Item, source.Id, index, "vtt", startTicks, 0, false, HttpContext.RequestAborted).ConfigureAwait(false);
         NoStore();
         return File(vtt, "text/vtt; charset=utf-8");
@@ -446,15 +369,8 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        var manifest = await _trickplayManager.GetTrickplayManifest(access.Item).ConfigureAwait(false);
-        if (index < 0 || !manifest.Values.Any(r => r.ContainsKey(width)))
-        {
-            return NotFound();
-        }
-
-        var saveWithMedia = _libraryManager.GetLibraryOptions(access.Item).SaveTrickplayWithMedia;
-        var path = await _trickplayManager.GetTrickplayTilePathAsync(access.Item, width, index, saveWithMedia).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+        var path = await _content.TrickplayTileAsync(access.Item, width, index).ConfigureAwait(false);
+        if (path is null)
         {
             return NotFound();
         }
@@ -483,7 +399,7 @@ public class ShareController : ControllerBase
             return error;
         }
 
-        var found = FindImage(access.Item, type);
+        var found = ShareContent.FindImage(access.Item, type);
         if (found is null || !found.Value.Info.IsLocalFile)
         {
             return NotFound();
@@ -503,80 +419,6 @@ public class ShareController : ControllerBase
         return PhysicalFile(path, mime ?? "image/jpeg");
     }
 
-    private static string DownloadName(BaseItem item, string path)
-    {
-        var name = item is Episode e
-            ? string.Create(CultureInfo.InvariantCulture, $"{e.SeriesName} S{e.ParentIndexNumber ?? 0:00}E{e.IndexNumber ?? 0:00} - {e.Name}")
-            : item.ProductionYear is { } year && !item.Name.EndsWith($"({year})", StringComparison.Ordinal) ? string.Create(CultureInfo.InvariantCulture, $"{item.Name} ({year})") : item.Name;
-        return name + Path.GetExtension(path);
-    }
-
-    private static string? DirectMime(string? path) => Path.GetExtension(path)?.ToLowerInvariant() switch
-    {
-        ".mp4" or ".m4v" or ".mov" => "video/mp4",
-        ".webm" => "video/webm",
-        _ => null,
-    };
-
-    /// <summary>
-    /// The item's image of the given type; a season or episode borrows its series' backdrop and logo.
-    /// </summary>
-    private static (BaseItem Item, ItemImageInfo Info)? FindImage(BaseItem item, ImageType type)
-    {
-        if (type == ImageType.Primary)
-        {
-            var info = item.GetImageInfo(ImageType.Primary, 0) ?? item.GetImageInfo(ImageType.Thumb, 0);
-            return info is null ? null : (item, info);
-        }
-
-        if (type is not (ImageType.Backdrop or ImageType.Logo))
-        {
-            return null;
-        }
-
-        BaseItem? series = item switch { Episode e => e.Series, Season s => s.Series, _ => null };
-        foreach (var candidate in new[] { item, series })
-        {
-            if (candidate?.GetImageInfo(type, 0) is { } info)
-            {
-                return (candidate, info);
-            }
-        }
-
-        return null;
-    }
-
-    private static object ItemDto(BaseItem item) => new
-    {
-        Id = item.Id.ToString("N"),
-        item.Name,
-        Type = item.GetBaseItemKind().ToString(),
-        item.Overview,
-        item.Tagline,
-        item.Genres,
-        item.OfficialRating,
-        item.CommunityRating,
-        SeriesName = item is Episode ep ? ep.SeriesName : null,
-        Year = item.ProductionYear,
-        Season = item is Episode e ? e.ParentIndexNumber : null,
-        Episode = item is Episode ? item.IndexNumber : null,
-        RuntimeMinutes = item.RunTimeTicks is { } ticks ? (int?)(ticks / TimeSpan.TicksPerMinute) : null,
-        HasImage = item.HasImage(ImageType.Primary) || item.HasImage(ImageType.Thumb),
-        HasBackdrop = FindImage(item, ImageType.Backdrop) is not null,
-        HasLogo = FindImage(item, ImageType.Logo) is not null,
-        Playable = item is Video,
-    };
-
-    private static SeasonView SeasonDto(Season season, Series? series)
-    {
-        var episodes = season.GetEpisodes(series, null!, new DtoOptions(false), false)
-            .OfType<Episode>()
-            .Where(e => !e.IsVirtualItem)
-            .Select(ItemDto)
-            .ToList();
-        return new SeasonView(season.Id.ToString("N"), season.Name, season.IndexNumber, episodes);
-    }
-
     /// <summary>
     /// Asks the gate, with the link's access cookie, and turns a refusal into the HTTP answer.
     /// </summary>
@@ -587,22 +429,10 @@ public class ShareController : ControllerBase
         return access is not null;
     }
 
-    private MediaSourceInfo? LocalSource(BaseItem item)
-    {
-        if (item is not Video)
-        {
-            return null;
-        }
-
-        // shortcut: local files only (no .strm, live TV or remote sources); add protocol handling if needed.
-        return _mediaSourceManager.GetStaticMediaSources(item, false)
-            .FirstOrDefault(s => s.Protocol == MediaProtocol.File && !string.IsNullOrEmpty(s.Path));
-    }
-
     private void IssueCookie(ShareLink link)
     {
         var now = DateTimeOffset.UtcNow;
-        var expires = ShareCookie.ExpiryFor(link, Settings.RememberDays, now);
+        var expires = ShareCookie.ExpiryFor(link, RememberDays, now);
         Response.Cookies.Append(ShareCookie.CookieName(link.Token), _cookie.Issue(link, expires, now), CookieOptionsFor(link, expires));
     }
 
@@ -624,8 +454,4 @@ public class ShareController : ControllerBase
     }
 
     private void NoStore() => Response.Headers.CacheControl = "no-store";
-
-    private sealed record SeasonView(string Id, string Name, int? Index, List<object> Episodes);
-
-    private sealed record PluginConfigurationSnapshot(int RememberDays, bool AllowDownload);
 }
